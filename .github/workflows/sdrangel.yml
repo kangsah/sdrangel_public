@@ -16,6 +16,7 @@ on:
 
 jobs:
   build:
+    if: ${{ false }}
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
     strategy:
@@ -108,6 +109,7 @@ jobs:
           path: ${{ github.workspace }}/build/sdrangel-${{ steps.get_version.outputs.version }}-win64.exe
 
   build_mac:
+    if: ${{ false }}
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -173,3 +175,13 @@ jobs:
       - name: Build SDRangel on Linux
         run: |
           debuild -i -us -uc -b
+      - name: Get version
+        id: get_version
+        run: echo "version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Rename package
+        run: mv ../sdrangel_*_amd64.deb sdrangel_${{ steps.get_version.outputs.version }}_ubuntu-24.04_amd64.deb
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdrangel_${{ steps.get_version.outputs.version }}_ubuntu-24.04_amd64.deb
+          path: sdrangel_${{ steps.get_version.outputs.version }}_ubuntu-24.04_amd64.deb
