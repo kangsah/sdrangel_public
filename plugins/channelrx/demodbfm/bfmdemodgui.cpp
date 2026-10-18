@@ -927,6 +927,7 @@ void BFMDemodGUI::makeUIConnections()
     QObject::connect(ui->squelch, &QSlider::valueChanged, this, &BFMDemodGUI::on_squelch_valueChanged);
 	QObject::connect(ui->audioMute, &QToolButton::toggled, this, &BFMDemodGUI::on_audioMute_toggled);
     QObject::connect(ui->audioStereo, &QToolButton::toggled, this, &BFMDemodGUI::on_audioStereo_toggled);
+    QObject::connect(ui->cappedIF, &QCheckBox::toggled, this, &BFMDemodGUI::on_cappedIF_toggled);
     QObject::connect(ui->lsbStereo, &ButtonSwitch::toggled, this, &BFMDemodGUI::on_lsbStereo_toggled);
     QObject::connect(ui->showPilot, &ButtonSwitch::clicked, this, &BFMDemodGUI::on_showPilot_clicked);
     QObject::connect(ui->rds, &ButtonSwitch::clicked, this, &BFMDemodGUI::on_rds_clicked);
