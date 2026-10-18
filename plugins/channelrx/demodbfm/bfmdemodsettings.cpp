@@ -48,7 +48,7 @@ void BFMDemodSettings::resetToDefaults()
     m_squelch = -60.0;
     m_audioMute = false;
     m_audioStereo = false;
-    m_useCappedIF = false;
+    m_useCappedIF = true;
     m_lsbStereo = false;
     m_showPilot = false;
     m_rdsActive = false;
@@ -187,7 +187,9 @@ bool BFMDemodSettings::deserialize(const QByteArray& data)
         d.readBool(25, &m_audioMute, false);
         d.readS32(26, &tmp, DeEmphasis50us);
         m_deEmphasis = static_cast<DeEmphasis>(tmp);
-        d.readBool(27, &m_useCappedIF, false);
+        d.readBool(27, &m_useCappedIF, true);
+        // Force the prototype on until the high-rate path is validated.
+        m_useCappedIF = true;
 
         return true;
     }
