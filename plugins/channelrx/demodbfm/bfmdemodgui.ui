@@ -546,6 +546,16 @@
       </item>
      </layout>
     </item>
+    <item>
+     <widget class="QCheckBox" name="cappedIF">
+      <property name="toolTip">
+       <string>Use a 250 kS/s capped IF front end instead of the legacy channelizer</string>
+      </property>
+      <property name="text">
+       <string>Capped IF (250 kS/s prototype)</string>
+      </property>
+     </widget>
+    </item>
    </layout>
   </widget>
   <widget class="QWidget" name="spectrumBox" native="true">

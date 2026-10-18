@@ -217,6 +217,12 @@ void BFMDemodGUI::on_audioStereo_toggled(bool stereo)
 	applySettings(QStringList({"audioStereo"}));
 }
 
+void BFMDemodGUI::on_cappedIF_toggled(bool enabled)
+{
+    m_settings.m_useCappedIF = enabled;
+    applySettings(QStringList({"useCappedIF"}));
+}
+
 void BFMDemodGUI::on_lsbStereo_toggled(bool lsb)
 {
     m_settings.m_lsbStereo = lsb;
@@ -533,6 +539,7 @@ void BFMDemodGUI::displaySettings()
 
 	ui->audioMute->setChecked(m_settings.m_audioMute);
     ui->audioStereo->setChecked(m_settings.m_audioStereo);
+    ui->cappedIF->setChecked(m_settings.m_useCappedIF);
     ui->lsbStereo->setChecked(m_settings.m_lsbStereo);
     ui->showPilot->setChecked(m_settings.m_showPilot);
     ui->rds->setChecked(m_settings.m_rdsActive);

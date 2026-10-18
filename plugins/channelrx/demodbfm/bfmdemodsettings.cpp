@@ -48,6 +48,7 @@ void BFMDemodSettings::resetToDefaults()
     m_squelch = -60.0;
     m_audioMute = false;
     m_audioStereo = false;
+    m_useCappedIF = false;
     m_lsbStereo = false;
     m_showPilot = false;
     m_rdsActive = false;
@@ -105,6 +106,7 @@ QByteArray BFMDemodSettings::serialize() const
     s.writeBool(24, m_hidden);
     s.writeBool(25, m_audioMute);
     s.writeS32(26, m_deEmphasis);
+    s.writeBool(27, m_useCappedIF);
 
     return s.final();
 }
@@ -185,6 +187,7 @@ bool BFMDemodSettings::deserialize(const QByteArray& data)
         d.readBool(25, &m_audioMute, false);
         d.readS32(26, &tmp, DeEmphasis50us);
         m_deEmphasis = static_cast<DeEmphasis>(tmp);
+        d.readBool(27, &m_useCappedIF, false);
 
         return true;
     }
@@ -217,6 +220,9 @@ void BFMDemodSettings::applySettings(const QStringList& settingsKeys, const BFMD
     }
     if (settingsKeys.contains("audioStereo")) {
         m_audioStereo = settings.m_audioStereo;
+    }
+    if (settingsKeys.contains("useCappedIF")) {
+        m_useCappedIF = settings.m_useCappedIF;
     }
     if (settingsKeys.contains("lsbStereo")) {
         m_lsbStereo = settings.m_lsbStereo;
@@ -289,6 +295,9 @@ QString BFMDemodSettings::getDebugString(const QStringList& settingsKeys, bool f
     }
     if (settingsKeys.contains("audioStereo") || force) {
         ostr << " m_audioStereo: " << m_audioStereo;
+    }
+    if (settingsKeys.contains("useCappedIF") || force) {
+        ostr << " m_useCappedIF: " << m_useCappedIF;
     }
     if (settingsKeys.contains("lsbStereo") || force) {
         ostr << " m_lsbStereo: " << m_lsbStereo;

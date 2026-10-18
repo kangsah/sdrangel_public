@@ -30,6 +30,7 @@
 #include "bfmdemodsink.h"
 
 class DownChannelizer;
+class BFMCappedIF;
 class SpectrumVis;
 
 class BFMDemodBaseband : public QObject
@@ -95,6 +96,8 @@ public:
 private:
     SampleSinkFifo m_sampleFifo;
     DownChannelizer *m_channelizer;
+    BFMCappedIF *m_cappedIF;
+    int m_basebandSampleRate;
     int m_channelSampleRate;
     BFMDemodSink m_sink;
 	MessageQueue m_inputMessageQueue; //!< Queue for asynchronous inbound communication

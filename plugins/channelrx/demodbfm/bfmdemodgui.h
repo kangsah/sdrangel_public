@@ -115,6 +115,7 @@ private slots:
 	void on_squelch_valueChanged(int value);
 	void on_audioMute_toggled(bool mute);
 	void on_audioStereo_toggled(bool stereo);
+	void on_cappedIF_toggled(bool enabled);
 	void on_lsbStereo_toggled(bool lsb);
 	void on_showPilot_clicked();
 	void on_rds_clicked();

@@ -2,6 +2,7 @@ project(bfm)
 
 set(bfm_SOURCES
 	bfmdemod.cpp
+    bfmcappedif.cpp
     bfmdemodsettings.cpp
     bfmdemodsink.cpp
     bfmdemodbaseband.cpp
@@ -16,6 +17,7 @@ set(bfm_SOURCES
 
 set(bfm_HEADERS
 	bfmdemod.h
+    bfmcappedif.h
     bfmdemodsettings.h
     bfmdemodsink.h
     bfmdemodbaseband.h

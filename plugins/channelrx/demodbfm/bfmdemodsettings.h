@@ -40,6 +40,7 @@ struct BFMDemodSettings
     Real m_squelch;
     bool m_audioMute;
     bool m_audioStereo;
+    bool m_useCappedIF;
     bool m_lsbStereo;
     bool m_showPilot;
     bool m_rdsActive;
