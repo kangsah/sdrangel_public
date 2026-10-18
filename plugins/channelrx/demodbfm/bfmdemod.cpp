@@ -238,6 +238,12 @@ void BFMDemod::setCenterFrequency(qint64 frequency)
 void BFMDemod::applySettings(const QStringList& settingsKeys, const BFMDemodSettings& settings, bool force)
 {
     qDebug() << "BFMDemod::applySettings: MsgConfigureBFMDemod:" << settings.getDebugString(settingsKeys, force);
+    if (settingsKeys.contains("useCappedIF") || force) {
+        qDebug() << "BFMDemod::applySettings: received useCappedIF:"
+                 << settings.m_useCappedIF
+                 << "keys:" << settingsKeys
+                 << "force:" << force;
+    }
 
     if (settingsKeys.contains("streamIndex") && (settings.m_streamIndex != m_settings.m_streamIndex))
     {

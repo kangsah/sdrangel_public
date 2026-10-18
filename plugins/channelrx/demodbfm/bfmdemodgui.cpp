@@ -220,6 +220,8 @@ void BFMDemodGUI::on_audioStereo_toggled(bool stereo)
 void BFMDemodGUI::on_cappedIF_toggled(bool enabled)
 {
     m_settings.m_useCappedIF = enabled;
+    qDebug() << "BFMDemodGUI::on_cappedIF_toggled: enabled:" << enabled
+             << " doApplySettings:" << m_doApplySettings;
     applySettings(QStringList({"useCappedIF"}));
 }
 
@@ -501,6 +503,12 @@ void BFMDemodGUI::applySettings(const QStringList& channelSettingsKeys, bool for
 {
 	if (m_doApplySettings)
 	{
+        if (channelSettingsKeys.contains("useCappedIF") || force) {
+            qDebug() << "BFMDemodGUI::applySettings: useCappedIF:"
+                     << m_settings.m_useCappedIF
+                     << "keys:" << channelSettingsKeys
+                     << "force:" << force;
+        }
         BFMDemod::MsgConfigureBFMDemod* msgConfig = BFMDemod::MsgConfigureBFMDemod::create(channelSettingsKeys, m_settings, force);
         m_bfmDemod->getInputMessageQueue()->push(msgConfig);
 	}
