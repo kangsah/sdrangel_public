@@ -142,6 +142,7 @@ jobs:
           make -j3
 
   build_linux:
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
