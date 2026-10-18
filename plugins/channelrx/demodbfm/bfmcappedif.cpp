@@ -36,9 +36,11 @@ void BFMCappedIF::configure(int inputSampleRate, qint64 frequencyOffset, int rfB
     m_nco.setPhase(0);
 
     // Keep the complete configured RF channel below the capped IF Nyquist rate.
-    const Real cutoff = std::max(static_cast<Real>(1000.0), std::min(
-        static_cast<Real>(rfBandwidth) / 2.0,
-        static_cast<Real>(m_outputSampleRate) / 2.0 - 5000.0));
+    const Real cutoff = std::max(
+        static_cast<Real>(1000.0),
+        std::min(
+            static_cast<Real>(rfBandwidth) / static_cast<Real>(2.0),
+            static_cast<Real>(m_outputSampleRate) / static_cast<Real>(2.0) - static_cast<Real>(5000.0)));
     m_resampler.create(64, m_inputSampleRate, cutoff);
     m_distance = static_cast<Real>(m_outputSampleRate) / m_inputSampleRate;
     m_distanceRemain = m_distance;
