@@ -22,6 +22,8 @@ BFMCappedIF::BFMCappedIF(BFMDemodSink* sink) :
     m_powerOfTwoDecimation(1),
     m_valid(false),
     m_inputSamples(0),
+    m_decimatedSamples(0),
+    m_resamplerInputSamples(0),
     m_outputSamples(0),
     m_nextReportInputSamples(1000000)
 {
@@ -37,6 +39,8 @@ void BFMCappedIF::configure(int inputSampleRate, qint64 frequencyOffset, int rfB
     m_decimator1.reset();
     m_decimator2.reset();
     m_inputSamples = 0;
+    m_decimatedSamples = 0;
+    m_resamplerInputSamples = 0;
     m_outputSamples = 0;
     m_nextReportInputSamples = 1000000;
 
@@ -162,6 +166,7 @@ void BFMCappedIF::feed(const SampleVector::const_iterator& begin, const SampleVe
 
         if (m_decimator1) {
             finalInput = stage1;
+            ++m_decimatedSamples;
         }
 
         if (m_decimator2 && !m_decimator2->decimate(finalInput, stage2)) {
@@ -173,6 +178,7 @@ void BFMCappedIF::feed(const SampleVector::const_iterator& begin, const SampleVe
         }
 
         Complex output;
+        ++m_resamplerInputSamples;
 
         if (m_resampler.decimate(&m_distanceRemain, finalInput, &output))
         {
@@ -193,6 +199,8 @@ void BFMCappedIF::feed(const SampleVector::const_iterator& begin, const SampleVe
             static_cast<double>(m_inputSamples) * m_outputSampleRate / m_inputSampleRate;
         qDebug() << "BFMCappedIF::feed:"
                  << "inputSamples:" << m_inputSamples
+                 << "decimatedSamples:" << m_decimatedSamples
+                 << "resamplerInputSamples:" << m_resamplerInputSamples
                  << "outputSamples:" << m_outputSamples
                  << "expectedOutputSamples:" << expectedOutputSamples
                  << "inputRate:" << m_inputSampleRate

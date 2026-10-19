@@ -44,6 +44,8 @@ private:
     unsigned int m_powerOfTwoDecimation;
     bool m_valid;
     quint64 m_inputSamples;
+    quint64 m_decimatedSamples;
+    quint64 m_resamplerInputSamples;
     quint64 m_outputSamples;
     quint64 m_nextReportInputSamples;
     SampleVector m_outputBuffer;
