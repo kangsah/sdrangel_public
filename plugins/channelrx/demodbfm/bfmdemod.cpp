@@ -39,6 +39,7 @@
 
 #include "dsp/dspcommands.h"
 #include "dsp/devicesamplemimo.h"
+#include "dsp/dsptypes.h"
 #include "device/deviceapi.h"
 #include "util/db.h"
 #include "maincore.h"
@@ -58,7 +59,13 @@ BFMDemod::BFMDemod(DeviceAPI *deviceAPI) :
     m_basebandSink(nullptr),
     m_running(false),
     m_spectrumVis(SDR_RX_SCALEF),
-    m_basebandSampleRate(0)
+    m_basebandSampleRate(0),
+    m_earlyIFSampleRate(0),
+    m_earlyIFDecimation(1),
+    m_earlyIFActive(false),
+    m_earlyIFInputSamples(0),
+    m_earlyIFOutputSamples(0),
+    m_earlyIFNextReportInputSamples(1000000)
 {
 	setObjectName(m_channelId);
 	applySettings(QStringList(), m_settings, true);
@@ -116,7 +123,146 @@ uint32_t BFMDemod::getNumberOfDeviceStreams() const
 void BFMDemod::feed(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end, bool firstOfBurst)
 {
     (void) firstOfBurst;
-    m_basebandSink->feed(begin, end);
+    if (m_earlyIFActive) {
+        feedEarlyIF(begin, end);
+    } else {
+        m_basebandSink->feed(begin, end);
+    }
+}
+
+void BFMDemod::configureEarlyIF()
+{
+    m_earlyIFSampleRate = m_basebandSampleRate;
+    m_earlyIFDecimation = 1;
+    m_earlyIFActive = false;
+    m_earlyIFDecimator1.reset();
+    m_earlyIFDecimator2.reset();
+    m_earlyIFInputSamples = 0;
+    m_earlyIFOutputSamples = 0;
+    m_earlyIFNextReportInputSamples = 1000000;
+
+    if (!m_settings.m_useCappedIF || (m_basebandSampleRate <= 0)) {
+        return;
+    }
+
+    while ((m_earlyIFDecimation < 128)
+        && (m_basebandSampleRate / static_cast<int>(m_earlyIFDecimation * 2) >= m_earlyIFMinimumRate))
+    {
+        m_earlyIFDecimation *= 2;
+    }
+
+    if (m_earlyIFDecimation <= 1) {
+        return;
+    }
+
+    m_earlyIFSampleRate = m_basebandSampleRate / static_cast<int>(m_earlyIFDecimation);
+    const int maximumRFBandwidth = m_earlyIFSampleRate - 10000;
+
+    if ((m_settings.m_rfBandwidth <= 0)
+        || (m_settings.m_rfBandwidth > maximumRFBandwidth))
+    {
+        qWarning() << "BFMDemod::configureEarlyIF: RF bandwidth does not fit reduced IF"
+                   << "rfBandwidth:" << m_settings.m_rfBandwidth
+                   << "reducedRate:" << m_earlyIFSampleRate
+                   << "maximumRFBandwidth:" << maximumRFBandwidth;
+        m_earlyIFSampleRate = m_basebandSampleRate;
+        m_earlyIFDecimation = 1;
+        return;
+    }
+
+    m_earlyIFNCO.setFreq(-m_settings.m_inputFrequencyOffset, m_basebandSampleRate);
+    m_earlyIFNCO.setPhase(0);
+
+    if (m_earlyIFDecimation <= 64) {
+        m_earlyIFDecimator1 = std::make_unique<DecimatorC>();
+        unsigned int log2Decimation = 0;
+        unsigned int decimation = m_earlyIFDecimation;
+
+        while (decimation > 1) {
+            ++log2Decimation;
+            decimation >>= 1;
+        }
+
+        m_earlyIFDecimator1->setLog2Decim(log2Decimation);
+    } else {
+        m_earlyIFDecimator1 = std::make_unique<DecimatorC>();
+        m_earlyIFDecimator1->setLog2Decim(6);
+        m_earlyIFDecimator2 = std::make_unique<DecimatorC>();
+        m_earlyIFDecimator2->setLog2Decim(1);
+    }
+
+    m_earlyIFActive = true;
+
+    qDebug() << "BFMDemod::configureEarlyIF:"
+             << "inputRate:" << m_basebandSampleRate
+             << "outputRate:" << m_earlyIFSampleRate
+             << "decimation:" << m_earlyIFDecimation
+             << "frequencyOffset:" << m_settings.m_inputFrequencyOffset;
+}
+
+void BFMDemod::feedEarlyIF(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end)
+{
+    if (!m_basebandSink || !m_earlyIFActive) {
+        return;
+    }
+
+    const quint64 inputBlockSamples = static_cast<quint64>(end - begin);
+    m_earlyIFInputSamples += inputBlockSamples;
+    m_earlyIFBuffer.clear();
+    m_earlyIFBuffer.reserve(static_cast<int>(inputBlockSamples / m_earlyIFDecimation) + 2);
+
+    for (auto it = begin; it != end; ++it)
+    {
+        const Complex input(
+            it->real() / SDR_RX_SCALEF,
+            it->imag() / SDR_RX_SCALEF);
+        const Complex translated = input * m_earlyIFNCO.nextIQ();
+        Complex stage1;
+        Complex stage2;
+        Complex output = translated;
+
+        if (m_earlyIFDecimator1 && !m_earlyIFDecimator1->decimate(output, stage1)) {
+            continue;
+        }
+
+        if (m_earlyIFDecimator1) {
+            output = stage1;
+        }
+
+        if (m_earlyIFDecimator2 && !m_earlyIFDecimator2->decimate(output, stage2)) {
+            continue;
+        }
+
+        if (m_earlyIFDecimator2) {
+            output = stage2;
+        }
+
+        m_earlyIFBuffer.emplace_back(
+            output.real() * SDR_RX_SCALEF,
+            output.imag() * SDR_RX_SCALEF);
+        ++m_earlyIFOutputSamples;
+    }
+
+    if (!m_earlyIFBuffer.empty()) {
+        m_basebandSink->feed(m_earlyIFBuffer.cbegin(), m_earlyIFBuffer.cend());
+    }
+
+    if (m_earlyIFInputSamples >= m_earlyIFNextReportInputSamples) {
+        qDebug() << "BFMDemod::feedEarlyIF:"
+                 << "inputSamples:" << m_earlyIFInputSamples
+                 << "outputSamples:" << m_earlyIFOutputSamples
+                 << "expectedOutputSamples:"
+                 << static_cast<double>(m_earlyIFInputSamples) / m_earlyIFDecimation
+                 << "inputRate:" << m_basebandSampleRate
+                 << "outputRate:" << m_earlyIFSampleRate;
+        m_earlyIFNextReportInputSamples =
+            ((m_earlyIFInputSamples / 1000000) + 1) * 1000000;
+    }
+}
+
+int BFMDemod::getBFMInputSampleRate() const
+{
+    return m_earlyIFActive ? m_earlyIFSampleRate : m_basebandSampleRate;
 }
 
 void BFMDemod::start()
@@ -141,10 +287,15 @@ void BFMDemod::start()
     m_basebandSink->startWork();
     m_thread->start();
 
-    DSPSignalNotification *dspMsg = new DSPSignalNotification(m_basebandSampleRate, 0);
+    configureEarlyIF();
+    DSPSignalNotification *dspMsg = new DSPSignalNotification(getBFMInputSampleRate(), 0);
     m_basebandSink->getInputMessageQueue()->push(dspMsg);
 
-    BFMDemodBaseband::MsgConfigureBFMDemodBaseband *msg = BFMDemodBaseband::MsgConfigureBFMDemodBaseband::create(QStringList(), m_settings, true);
+    BFMDemodSettings basebandSettings = m_settings;
+    if (m_earlyIFActive) {
+        basebandSettings.m_inputFrequencyOffset = 0;
+    }
+    BFMDemodBaseband::MsgConfigureBFMDemodBaseband *msg = BFMDemodBaseband::MsgConfigureBFMDemodBaseband::create(QStringList(), basebandSettings, true);
     m_basebandSink->getInputMessageQueue()->push(msg);
 
     SpectrumSettings spectrumSettings = m_spectrumVis.getSettings();
@@ -183,10 +334,11 @@ bool BFMDemod::handleMessage(const Message& cmd)
     {
         DSPSignalNotification& notif = (DSPSignalNotification&) cmd;
         m_basebandSampleRate = notif.getSampleRate();
+        configureEarlyIF();
         // Forward to the sink
         if (m_running)
         {
-            DSPSignalNotification* rep = new DSPSignalNotification(notif); // make a copy
+            DSPSignalNotification* rep = new DSPSignalNotification(getBFMInputSampleRate(), 0);
             qDebug() << "BFMDemod::handleMessage: DSPSignalNotification";
             m_basebandSink->getInputMessageQueue()->push(rep);
         }
@@ -260,7 +412,11 @@ void BFMDemod::applySettings(const QStringList& settingsKeys, const BFMDemodSett
 
     if (m_running)
     {
-        BFMDemodBaseband::MsgConfigureBFMDemodBaseband *msg = BFMDemodBaseband::MsgConfigureBFMDemodBaseband::create(settingsKeys, settings, force);
+        BFMDemodSettings basebandSettings = settings;
+        if (settings.m_useCappedIF) {
+            basebandSettings.m_inputFrequencyOffset = 0;
+        }
+        BFMDemodBaseband::MsgConfigureBFMDemodBaseband *msg = BFMDemodBaseband::MsgConfigureBFMDemodBaseband::create(settingsKeys, basebandSettings, force);
         m_basebandSink->getInputMessageQueue()->push(msg);
     }
 
@@ -285,6 +441,15 @@ void BFMDemod::applySettings(const QStringList& settingsKeys, const BFMDemodSett
         m_settings = settings;
     } else {
         m_settings.applySettings(settingsKeys, settings);
+    }
+
+    if (m_running && (settingsKeys.contains("useCappedIF")
+        || settingsKeys.contains("inputFrequencyOffset")
+        || force))
+    {
+        configureEarlyIF();
+        m_basebandSink->getInputMessageQueue()->push(
+            new DSPSignalNotification(getBFMInputSampleRate(), 0));
     }
 }
 
