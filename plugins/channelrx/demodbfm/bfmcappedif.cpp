@@ -18,6 +18,8 @@ BFMCappedIF::BFMCappedIF(BFMDemodSink* sink) :
     m_distanceRemain(1.0),
     m_inputSampleRate(0),
     m_outputSampleRate(0),
+    m_intermediateSampleRate(0),
+    m_powerOfTwoDecimation(1),
     m_inputSamples(0),
     m_outputSamples(0),
     m_nextReportInputSamples(1000000)
@@ -28,6 +30,10 @@ void BFMCappedIF::configure(int inputSampleRate, qint64 frequencyOffset, int rfB
 {
     m_inputSampleRate = inputSampleRate;
     m_outputSampleRate = std::min(CappedSampleRate, inputSampleRate);
+    m_intermediateSampleRate = 0;
+    m_powerOfTwoDecimation = 1;
+    m_decimator1.reset();
+    m_decimator2.reset();
     m_inputSamples = 0;
     m_outputSamples = 0;
     m_nextReportInputSamples = 1000000;
@@ -45,26 +51,59 @@ void BFMCappedIF::configure(int inputSampleRate, qint64 frequencyOffset, int rfB
     m_nco.setFreq(-frequencyOffset, m_inputSampleRate);
     m_nco.setPhase(0);
 
+    while ((m_powerOfTwoDecimation < 128)
+        && (m_inputSampleRate / static_cast<int>(m_powerOfTwoDecimation * 2) >= m_outputSampleRate))
+    {
+        m_powerOfTwoDecimation *= 2;
+    }
+
+    m_intermediateSampleRate = m_inputSampleRate / static_cast<int>(m_powerOfTwoDecimation);
+
+    if (m_powerOfTwoDecimation > 1)
+    {
+        if (m_powerOfTwoDecimation <= 64)
+        {
+            m_decimator1 = std::make_unique<DecimatorC>();
+            unsigned int log2Decimation = 0;
+            unsigned int decimation = m_powerOfTwoDecimation;
+
+            while (decimation > 1)
+            {
+                ++log2Decimation;
+                decimation >>= 1;
+            }
+
+            m_decimator1->setLog2Decim(log2Decimation);
+        }
+        else
+        {
+            m_decimator1 = std::make_unique<DecimatorC>();
+            m_decimator1->setLog2Decim(6);
+            m_decimator2 = std::make_unique<DecimatorC>();
+            m_decimator2->setLog2Decim(1);
+        }
+    }
+
     // Keep the complete configured RF channel below the capped IF Nyquist rate.
     const Real cutoff = std::max(
         static_cast<Real>(1000.0),
         std::min(
             static_cast<Real>(rfBandwidth) / static_cast<Real>(2.0),
             static_cast<Real>(m_outputSampleRate) / static_cast<Real>(2.0) - static_cast<Real>(5000.0)));
-    m_resampler.create(64, m_inputSampleRate, cutoff);
-    m_distance = static_cast<Real>(m_outputSampleRate) / m_inputSampleRate;
+    m_resampler.create(64, m_intermediateSampleRate, cutoff);
+    m_distance = static_cast<Real>(m_intermediateSampleRate) / m_outputSampleRate;
     m_distanceRemain = m_distance;
     m_outputBuffer.clear();
 
     qDebug() << "BFMCappedIF::configure:"
              << "inputRate:" << m_inputSampleRate
              << "outputRate:" << m_outputSampleRate
+             << "powerOfTwoDecimation:" << m_powerOfTwoDecimation
+             << "intermediateRate:" << m_intermediateSampleRate
+             << "finalInputPerOutput:" << m_distance
              << "frequencyOffset:" << frequencyOffset
              << "rfBandwidth:" << rfBandwidth
-             << "cutoff:" << cutoff
-             << "prototypeOutputPerInput:" << m_distance
-             << "conceptualInputPerOutput:"
-             << static_cast<Real>(m_inputSampleRate) / m_outputSampleRate;
+             << "cutoff:" << cutoff;
 }
 
 void BFMCappedIF::feed(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end)
@@ -84,9 +123,29 @@ void BFMCappedIF::feed(const SampleVector::const_iterator& begin, const SampleVe
             it->real() / SDR_RX_SCALEF,
             it->imag() / SDR_RX_SCALEF);
         const Complex translated = input * m_nco.nextIQ();
+        Complex stage1;
+        Complex stage2;
+        Complex finalInput = translated;
+
+        if (m_decimator1 && !m_decimator1->decimate(finalInput, stage1)) {
+            continue;
+        }
+
+        if (m_decimator1) {
+            finalInput = stage1;
+        }
+
+        if (m_decimator2 && !m_decimator2->decimate(finalInput, stage2)) {
+            continue;
+        }
+
+        if (m_decimator2) {
+            finalInput = stage2;
+        }
+
         Complex output;
 
-        if (m_resampler.decimate(&m_distanceRemain, translated, &output))
+        if (m_resampler.decimate(&m_distanceRemain, finalInput, &output))
         {
             m_outputBuffer.emplace_back(
                 output.real() * SDR_RX_SCALEF,

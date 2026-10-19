@@ -9,6 +9,9 @@
 #ifndef PLUGINS_CHANNELRX_DEMODBFM_BFMCAPPEDIF_H_
 #define PLUGINS_CHANNELRX_DEMODBFM_BFMCAPPEDIF_H_
 
+#include <memory>
+
+#include "dsp/decimatorc.h"
 #include "dsp/dsptypes.h"
 #include "dsp/interpolator.h"
 #include "dsp/nco.h"
@@ -29,14 +32,15 @@ public:
 private:
     BFMDemodSink* m_sink;
     NCO m_nco;
+    std::unique_ptr<DecimatorC> m_decimator1;
+    std::unique_ptr<DecimatorC> m_decimator2;
     Interpolator m_resampler;
-    // The current prototype stores output samples per input sample. This is
-    // not a valid distance for arbitrary decimation and will be replaced by
-    // the staged converter in phase 2.
     Real m_distance;
     Real m_distanceRemain;
     int m_inputSampleRate;
     int m_outputSampleRate;
+    int m_intermediateSampleRate;
+    unsigned int m_powerOfTwoDecimation;
     quint64 m_inputSamples;
     quint64 m_outputSamples;
     quint64 m_nextReportInputSamples;
