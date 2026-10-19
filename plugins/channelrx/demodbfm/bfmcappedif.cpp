@@ -7,6 +7,7 @@
 ///////////////////////////////////////////////////////////////////////////////////
 
 #include <algorithm>
+#include <QDebug>
 
 #include "bfmcappedif.h"
 #include "bfmdemodsink.h"
@@ -16,7 +17,10 @@ BFMCappedIF::BFMCappedIF(BFMDemodSink* sink) :
     m_distance(1.0),
     m_distanceRemain(1.0),
     m_inputSampleRate(0),
-    m_outputSampleRate(0)
+    m_outputSampleRate(0),
+    m_inputSamples(0),
+    m_outputSamples(0),
+    m_nextReportInputSamples(1000000)
 {
 }
 
@@ -24,11 +28,17 @@ void BFMCappedIF::configure(int inputSampleRate, qint64 frequencyOffset, int rfB
 {
     m_inputSampleRate = inputSampleRate;
     m_outputSampleRate = std::min(CappedSampleRate, inputSampleRate);
+    m_inputSamples = 0;
+    m_outputSamples = 0;
+    m_nextReportInputSamples = 1000000;
 
     if ((m_inputSampleRate <= 0) || (m_outputSampleRate <= 0)) {
         m_distance = 1.0;
         m_distanceRemain = 1.0;
         m_outputBuffer.clear();
+        qWarning() << "BFMCappedIF::configure: invalid rates"
+                   << "input:" << m_inputSampleRate
+                   << "output:" << m_outputSampleRate;
         return;
     }
 
@@ -45,6 +55,16 @@ void BFMCappedIF::configure(int inputSampleRate, qint64 frequencyOffset, int rfB
     m_distance = static_cast<Real>(m_outputSampleRate) / m_inputSampleRate;
     m_distanceRemain = m_distance;
     m_outputBuffer.clear();
+
+    qDebug() << "BFMCappedIF::configure:"
+             << "inputRate:" << m_inputSampleRate
+             << "outputRate:" << m_outputSampleRate
+             << "frequencyOffset:" << frequencyOffset
+             << "rfBandwidth:" << rfBandwidth
+             << "cutoff:" << cutoff
+             << "prototypeOutputPerInput:" << m_distance
+             << "conceptualInputPerOutput:"
+             << static_cast<Real>(m_inputSampleRate) / m_outputSampleRate;
 }
 
 void BFMCappedIF::feed(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end)
@@ -53,8 +73,10 @@ void BFMCappedIF::feed(const SampleVector::const_iterator& begin, const SampleVe
         return;
     }
 
+    const quint64 inputBlockSamples = static_cast<quint64>(end - begin);
+    m_inputSamples += inputBlockSamples;
     m_outputBuffer.clear();
-    m_outputBuffer.reserve(static_cast<int>((end - begin) * m_distance) + 2);
+    m_outputBuffer.reserve(static_cast<int>(inputBlockSamples * m_distance) + 2);
 
     for (auto it = begin; it != end; ++it)
     {
@@ -69,11 +91,25 @@ void BFMCappedIF::feed(const SampleVector::const_iterator& begin, const SampleVe
             m_outputBuffer.emplace_back(
                 output.real() * SDR_RX_SCALEF,
                 output.imag() * SDR_RX_SCALEF);
+            ++m_outputSamples;
             m_distanceRemain += m_distance;
         }
     }
 
     if (!m_outputBuffer.empty()) {
         m_sink->feed(m_outputBuffer.cbegin(), m_outputBuffer.cend());
+    }
+
+    if (m_inputSamples >= m_nextReportInputSamples) {
+        const double expectedOutputSamples =
+            static_cast<double>(m_inputSamples) * m_outputSampleRate / m_inputSampleRate;
+        qDebug() << "BFMCappedIF::feed:"
+                 << "inputSamples:" << m_inputSamples
+                 << "outputSamples:" << m_outputSamples
+                 << "expectedOutputSamples:" << expectedOutputSamples
+                 << "inputRate:" << m_inputSampleRate
+                 << "outputRate:" << m_outputSampleRate;
+        m_nextReportInputSamples =
+            ((m_inputSamples / 1000000) + 1) * 1000000;
     }
 }
