@@ -167,6 +167,7 @@ bool BFMDemodBaseband::handleMessage(const Message& cmd)
         DSPSignalNotification& notif = (DSPSignalNotification&) cmd;
         qDebug() << "BFMDemodBaseband::handleMessage: DSPSignalNotification: basebandSampleRate: " << notif.getSampleRate();
         m_sampleFifo.setSize(SampleSinkFifo::getSizePolicy(notif.getSampleRate()));
+        m_sampleFifo.reset();
         m_basebandSampleRate = notif.getSampleRate();
 
         m_useCappedIFActive = m_settings.m_useCappedIF;
@@ -189,6 +190,11 @@ bool BFMDemodBaseband::handleMessage(const Message& cmd)
         if (m_settings.m_useCappedIF && !m_useCappedIFActive) {
             qWarning() << "BFMDemodBaseband::handleMessage: capped-IF rejected; using legacy path";
         }
+
+        qDebug() << "BFMDemodBaseband::handleMessage: selected path:"
+                 << (m_useCappedIFActive ? "capped-IF" : "legacy")
+                 << "requestedCappedIF:" << m_settings.m_useCappedIF
+                 << "channelSampleRate:" << channelSampleRate;
 
         if (m_channelSampleRate != channelSampleRate)
         {
@@ -231,6 +237,8 @@ void BFMDemodBaseband::applySettings(const QStringList& settingsKeys, const BFMD
      || (settingsKeys.contains("inputFrequencyOffset") && (settings.m_inputFrequencyOffset != m_settings.m_inputFrequencyOffset))
      || (settingsKeys.contains("useCappedIF") && (settings.m_useCappedIF != m_settings.m_useCappedIF)) || force)
     {
+        m_sampleFifo.reset();
+
         bool useCappedIF = settings.m_useCappedIF;
         int channelSampleRate;
         int channelFrequencyOffset;
@@ -314,6 +322,7 @@ int BFMDemodBaseband::getChannelSampleRate() const
 void BFMDemodBaseband::setBasebandSampleRate(int sampleRate)
 {
     m_basebandSampleRate = sampleRate;
+    m_sampleFifo.reset();
 
     int channelSampleRate;
     int channelFrequencyOffset;
