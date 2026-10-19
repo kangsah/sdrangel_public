@@ -205,7 +205,7 @@ bool DecimatorC::decimate64(Complex c, Complex& cd)
 
                     if (done32)
                     {
-                        bool done64 = m_decimator32.workDecimateCenter(&x, &y);
+                        bool done64 = m_decimator64.workDecimateCenter(&x, &y);
 
                         if (done64)
                         {
