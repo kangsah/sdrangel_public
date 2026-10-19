@@ -20,6 +20,7 @@ BFMCappedIF::BFMCappedIF(BFMDemodSink* sink) :
     m_outputSampleRate(0),
     m_intermediateSampleRate(0),
     m_powerOfTwoDecimation(1),
+    m_valid(false),
     m_inputSamples(0),
     m_outputSamples(0),
     m_nextReportInputSamples(1000000)
@@ -32,6 +33,7 @@ void BFMCappedIF::configure(int inputSampleRate, qint64 frequencyOffset, int rfB
     m_outputSampleRate = std::min(CappedSampleRate, inputSampleRate);
     m_intermediateSampleRate = 0;
     m_powerOfTwoDecimation = 1;
+    m_valid = false;
     m_decimator1.reset();
     m_decimator2.reset();
     m_inputSamples = 0;
@@ -58,6 +60,33 @@ void BFMCappedIF::configure(int inputSampleRate, qint64 frequencyOffset, int rfB
     }
 
     m_intermediateSampleRate = m_inputSampleRate / static_cast<int>(m_powerOfTwoDecimation);
+
+    m_distance = static_cast<Real>(m_intermediateSampleRate) / m_outputSampleRate;
+
+    if ((m_distance < static_cast<Real>(1.0)) || (m_distance >= static_cast<Real>(2.0)))
+    {
+        qWarning() << "BFMCappedIF::configure: unsupported final ratio"
+                   << "inputRate:" << m_inputSampleRate
+                   << "outputRate:" << m_outputSampleRate
+                   << "decimation:" << m_powerOfTwoDecimation
+                   << "intermediateRate:" << m_intermediateSampleRate
+                   << "finalInputPerOutput:" << m_distance;
+        return;
+    }
+
+    const Real outputNyquist = static_cast<Real>(m_outputSampleRate) / static_cast<Real>(2.0);
+    const Real maximumCutoff = outputNyquist - static_cast<Real>(5000.0);
+
+    if ((rfBandwidth <= 0)
+        || (maximumCutoff <= static_cast<Real>(1000.0))
+        || (static_cast<Real>(rfBandwidth) / static_cast<Real>(2.0) > maximumCutoff))
+    {
+        qWarning() << "BFMCappedIF::configure: RF bandwidth does not fit capped IF"
+                   << "rfBandwidth:" << rfBandwidth
+                   << "outputRate:" << m_outputSampleRate
+                   << "maximumCutoff:" << maximumCutoff;
+        return;
+    }
 
     if (m_powerOfTwoDecimation > 1)
     {
@@ -91,9 +120,9 @@ void BFMCappedIF::configure(int inputSampleRate, qint64 frequencyOffset, int rfB
             static_cast<Real>(rfBandwidth) / static_cast<Real>(2.0),
             static_cast<Real>(m_outputSampleRate) / static_cast<Real>(2.0) - static_cast<Real>(5000.0)));
     m_resampler.create(64, m_intermediateSampleRate, cutoff);
-    m_distance = static_cast<Real>(m_intermediateSampleRate) / m_outputSampleRate;
     m_distanceRemain = m_distance;
     m_outputBuffer.clear();
+    m_valid = true;
 
     qDebug() << "BFMCappedIF::configure:"
              << "inputRate:" << m_inputSampleRate

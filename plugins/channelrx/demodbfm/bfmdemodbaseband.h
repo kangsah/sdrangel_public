@@ -99,6 +99,7 @@ private:
     BFMCappedIF *m_cappedIF;
     int m_basebandSampleRate;
     int m_channelSampleRate;
+    bool m_useCappedIFActive;
     BFMDemodSink m_sink;
 	MessageQueue m_inputMessageQueue; //!< Queue for asynchronous inbound communication
     BFMDemodSettings m_settings;

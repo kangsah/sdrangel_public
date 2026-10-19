@@ -34,7 +34,8 @@ BFMDemodBaseband::BFMDemodBaseband() :
     m_running(false),
     m_messageQueueToGUI(nullptr),
     m_spectrumVis(nullptr),
-    m_basebandSampleRate(0)
+    m_basebandSampleRate(0),
+    m_useCappedIFActive(false)
 
 {
     m_sampleFifo.setSize(SampleSinkFifo::getSizePolicy(48000));
@@ -115,7 +116,7 @@ void BFMDemodBaseband::handleData()
 
 		// first part of FIFO data
         if (part1begin != part1end) {
-		    if (m_settings.m_useCappedIF) {
+		    if (m_useCappedIFActive) {
 		        m_cappedIF->feed(part1begin, part1end);
 		    } else {
 		        m_channelizer->feed(part1begin, part1end);
@@ -124,7 +125,7 @@ void BFMDemodBaseband::handleData()
 
 		// second part of FIFO data (used when block wraps around)
 		if(part2begin != part2end) {
-		    if (m_settings.m_useCappedIF) {
+		    if (m_useCappedIFActive) {
 		        m_cappedIF->feed(part2begin, part2end);
 		    } else {
 		        m_channelizer->feed(part2begin, part2end);
@@ -168,16 +169,26 @@ bool BFMDemodBaseband::handleMessage(const Message& cmd)
         m_sampleFifo.setSize(SampleSinkFifo::getSizePolicy(notif.getSampleRate()));
         m_basebandSampleRate = notif.getSampleRate();
 
-        if (m_settings.m_useCappedIF) {
+        m_useCappedIFActive = m_settings.m_useCappedIF;
+
+        if (m_useCappedIFActive) {
             m_cappedIF->configure(m_basebandSampleRate, m_settings.m_inputFrequencyOffset, m_settings.m_rfBandwidth);
+            m_useCappedIFActive = m_cappedIF->isValid();
+        }
+
+        if (m_useCappedIFActive) {
             m_sink.applyChannelSettings(m_cappedIF->getSampleRate(), 0);
         } else {
             m_channelizer->setBasebandSampleRate(m_basebandSampleRate);
             m_sink.applyChannelSettings(m_channelizer->getChannelSampleRate(), m_channelizer->getChannelFrequencyOffset());
         }
 
-        const int channelSampleRate = m_settings.m_useCappedIF ?
+        const int channelSampleRate = m_useCappedIFActive ?
             m_cappedIF->getSampleRate() : m_channelizer->getChannelSampleRate();
+
+        if (m_settings.m_useCappedIF && !m_useCappedIFActive) {
+            qWarning() << "BFMDemodBaseband::handleMessage: capped-IF rejected; using legacy path";
+        }
 
         if (m_channelSampleRate != channelSampleRate)
         {
@@ -220,12 +231,18 @@ void BFMDemodBaseband::applySettings(const QStringList& settingsKeys, const BFMD
      || (settingsKeys.contains("inputFrequencyOffset") && (settings.m_inputFrequencyOffset != m_settings.m_inputFrequencyOffset))
      || (settingsKeys.contains("useCappedIF") && (settings.m_useCappedIF != m_settings.m_useCappedIF)) || force)
     {
-        const bool useCappedIF = settings.m_useCappedIF;
+        bool useCappedIF = settings.m_useCappedIF;
         int channelSampleRate;
         int channelFrequencyOffset;
 
         if (useCappedIF) {
             m_cappedIF->configure(m_basebandSampleRate, settings.m_inputFrequencyOffset, settings.m_rfBandwidth);
+            useCappedIF = m_cappedIF->isValid();
+        }
+
+        m_useCappedIFActive = useCappedIF;
+
+        if (useCappedIF) {
             channelSampleRate = m_cappedIF->getSampleRate();
             channelFrequencyOffset = 0;
         } else {
@@ -238,8 +255,13 @@ void BFMDemodBaseband::applySettings(const QStringList& settingsKeys, const BFMD
 
         qDebug() << "BFMDemodBaseband::applySettings: selected path:"
                  << (useCappedIF ? "capped-IF" : "legacy")
+                 << "requestedCappedIF:" << settings.m_useCappedIF
                  << "channelSampleRate:" << channelSampleRate
                  << "channelFrequencyOffset:" << channelFrequencyOffset;
+
+        if (settings.m_useCappedIF && !useCappedIF) {
+            qWarning() << "BFMDemodBaseband::applySettings: capped-IF rejected; using legacy path";
+        }
 
         if (m_channelSampleRate != channelSampleRate)
         {
@@ -285,7 +307,7 @@ void BFMDemodBaseband::applySettings(const QStringList& settingsKeys, const BFMD
 
 int BFMDemodBaseband::getChannelSampleRate() const
 {
-    return m_settings.m_useCappedIF ? m_cappedIF->getSampleRate() : m_channelizer->getChannelSampleRate();
+    return m_useCappedIFActive ? m_cappedIF->getSampleRate() : m_channelizer->getChannelSampleRate();
 }
 
 
@@ -296,14 +318,24 @@ void BFMDemodBaseband::setBasebandSampleRate(int sampleRate)
     int channelSampleRate;
     int channelFrequencyOffset;
 
-    if (m_settings.m_useCappedIF) {
+    m_useCappedIFActive = m_settings.m_useCappedIF;
+
+    if (m_useCappedIFActive) {
         m_cappedIF->configure(m_basebandSampleRate, m_settings.m_inputFrequencyOffset, m_settings.m_rfBandwidth);
+        m_useCappedIFActive = m_cappedIF->isValid();
+    }
+
+    if (m_useCappedIFActive) {
         channelSampleRate = m_cappedIF->getSampleRate();
         channelFrequencyOffset = 0;
     } else {
         m_channelizer->setBasebandSampleRate(m_basebandSampleRate);
         channelSampleRate = m_channelizer->getChannelSampleRate();
         channelFrequencyOffset = m_channelizer->getChannelFrequencyOffset();
+    }
+
+    if (m_settings.m_useCappedIF && !m_useCappedIFActive) {
+        qWarning() << "BFMDemodBaseband::setBasebandSampleRate: capped-IF rejected; using legacy path";
     }
 
     m_sink.applyChannelSettings(channelSampleRate, channelFrequencyOffset);

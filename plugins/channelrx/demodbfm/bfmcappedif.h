@@ -28,6 +28,7 @@ public:
     void configure(int inputSampleRate, qint64 frequencyOffset, int rfBandwidth);
     void feed(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end);
     int getSampleRate() const { return m_outputSampleRate; }
+    bool isValid() const { return m_valid; }
 
 private:
     BFMDemodSink* m_sink;
@@ -41,6 +42,7 @@ private:
     int m_outputSampleRate;
     int m_intermediateSampleRate;
     unsigned int m_powerOfTwoDecimation;
+    bool m_valid;
     quint64 m_inputSamples;
     quint64 m_outputSamples;
     quint64 m_nextReportInputSamples;
