@@ -56,16 +56,15 @@ BFMDemod::BFMDemod(DeviceAPI *deviceAPI) :
     ChannelAPI(m_channelIdURI, ChannelAPI::StreamSingleSink),
     m_deviceAPI(deviceAPI),
     m_thread(nullptr),
+    m_earlyIFThread(nullptr),
     m_basebandSink(nullptr),
+    m_earlyIFWorker(nullptr),
     m_running(false),
     m_spectrumVis(SDR_RX_SCALEF),
     m_basebandSampleRate(0),
     m_earlyIFSampleRate(0),
     m_earlyIFDecimation(1),
-    m_earlyIFActive(false),
-    m_earlyIFInputSamples(0),
-    m_earlyIFOutputSamples(0),
-    m_earlyIFNextReportInputSamples(1000000)
+    m_earlyIFActive(false)
 {
 	setObjectName(m_channelId);
 	applySettings(QStringList(), m_settings, true);
@@ -123,8 +122,8 @@ uint32_t BFMDemod::getNumberOfDeviceStreams() const
 void BFMDemod::feed(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end, bool firstOfBurst)
 {
     (void) firstOfBurst;
-    if (m_earlyIFActive) {
-        feedEarlyIF(begin, end);
+    if (m_earlyIFActive && m_earlyIFWorker) {
+        m_earlyIFWorker->feed(begin, end);
     } else {
         m_basebandSink->feed(begin, end);
     }
@@ -135,12 +134,6 @@ void BFMDemod::configureEarlyIF()
     m_earlyIFSampleRate = m_basebandSampleRate;
     m_earlyIFDecimation = 1;
     m_earlyIFActive = false;
-    m_earlyIFDecimator1.reset();
-    m_earlyIFDecimator2.reset();
-    m_earlyIFInputSamples = 0;
-    m_earlyIFOutputSamples = 0;
-    m_earlyIFNextReportInputSamples = 1000000;
-
     if (!m_settings.m_useCappedIF || (m_basebandSampleRate <= 0)) {
         return;
     }
@@ -170,94 +163,20 @@ void BFMDemod::configureEarlyIF()
         return;
     }
 
-    m_earlyIFNCO.setFreq(-m_settings.m_inputFrequencyOffset, m_basebandSampleRate);
-    m_earlyIFNCO.setPhase(0);
-
-    if (m_earlyIFDecimation <= 64) {
-        m_earlyIFDecimator1 = std::make_unique<DecimatorC>();
-        unsigned int log2Decimation = 0;
-        unsigned int decimation = m_earlyIFDecimation;
-
-        while (decimation > 1) {
-            ++log2Decimation;
-            decimation >>= 1;
-        }
-
-        m_earlyIFDecimator1->setLog2Decim(log2Decimation);
-    } else {
-        m_earlyIFDecimator1 = std::make_unique<DecimatorC>();
-        m_earlyIFDecimator1->setLog2Decim(6);
-        m_earlyIFDecimator2 = std::make_unique<DecimatorC>();
-        m_earlyIFDecimator2->setLog2Decim(1);
-    }
-
     m_earlyIFActive = true;
+    if (m_earlyIFWorker) {
+        m_earlyIFWorker->configure(
+            m_basebandSampleRate,
+            m_earlyIFSampleRate,
+            m_earlyIFDecimation,
+            m_settings.m_inputFrequencyOffset);
+    }
 
     qDebug() << "BFMDemod::configureEarlyIF:"
              << "inputRate:" << m_basebandSampleRate
              << "outputRate:" << m_earlyIFSampleRate
              << "decimation:" << m_earlyIFDecimation
              << "frequencyOffset:" << m_settings.m_inputFrequencyOffset;
-}
-
-void BFMDemod::feedEarlyIF(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end)
-{
-    if (!m_basebandSink || !m_earlyIFActive) {
-        return;
-    }
-
-    const quint64 inputBlockSamples = static_cast<quint64>(end - begin);
-    m_earlyIFInputSamples += inputBlockSamples;
-    m_earlyIFBuffer.clear();
-    m_earlyIFBuffer.reserve(static_cast<int>(inputBlockSamples / m_earlyIFDecimation) + 2);
-
-    for (auto it = begin; it != end; ++it)
-    {
-        const Complex input(
-            it->real() / SDR_RX_SCALEF,
-            it->imag() / SDR_RX_SCALEF);
-        const Complex translated = input * m_earlyIFNCO.nextIQ();
-        Complex stage1;
-        Complex stage2;
-        Complex output = translated;
-
-        if (m_earlyIFDecimator1 && !m_earlyIFDecimator1->decimate(output, stage1)) {
-            continue;
-        }
-
-        if (m_earlyIFDecimator1) {
-            output = stage1;
-        }
-
-        if (m_earlyIFDecimator2 && !m_earlyIFDecimator2->decimate(output, stage2)) {
-            continue;
-        }
-
-        if (m_earlyIFDecimator2) {
-            output = stage2;
-        }
-
-        m_earlyIFBuffer.emplace_back(
-            output.real() * SDR_RX_SCALEF,
-            output.imag() * SDR_RX_SCALEF);
-        ++m_earlyIFOutputSamples;
-    }
-
-    if (!m_earlyIFBuffer.empty()) {
-        m_basebandSink->feed(m_earlyIFBuffer.cbegin(), m_earlyIFBuffer.cend());
-    }
-
-    if (m_earlyIFInputSamples >= m_earlyIFNextReportInputSamples) {
-        qDebug() << "BFMDemod::feedEarlyIF:"
-                 << "inputSamples:" << m_earlyIFInputSamples
-                 << "outputSamples:" << m_earlyIFOutputSamples
-                 << "expectedOutputSamples:"
-                 << static_cast<double>(m_earlyIFInputSamples) / m_earlyIFDecimation
-                 << "inputRate:" << m_basebandSampleRate
-                 << "outputRate:" << m_earlyIFSampleRate;
-        m_earlyIFNextReportInputSamples =
-            ((m_earlyIFInputSamples / 1000000) + 1) * 1000000;
-    }
 }
 
 int BFMDemod::getBFMInputSampleRate() const
@@ -287,6 +206,16 @@ void BFMDemod::start()
     m_basebandSink->startWork();
     m_thread->start();
 
+    m_earlyIFThread = new QThread();
+    m_earlyIFThread->setObjectName("BFMEarlyIF");
+    m_earlyIFWorker = new BFMEarlyIFWorker();
+    m_earlyIFWorker->setOutput(m_basebandSink);
+    m_earlyIFWorker->moveToThread(m_earlyIFThread);
+    QObject::connect(m_earlyIFThread, &QThread::finished, m_earlyIFWorker, &QObject::deleteLater);
+    QObject::connect(m_earlyIFThread, &QThread::finished, m_earlyIFThread, &QThread::deleteLater);
+    m_earlyIFWorker->startWork();
+    m_earlyIFThread->start();
+
     configureEarlyIF();
     DSPSignalNotification *dspMsg = new DSPSignalNotification(getBFMInputSampleRate(), 0);
     m_basebandSink->getInputMessageQueue()->push(dspMsg);
@@ -314,6 +243,14 @@ void BFMDemod::stop()
 
     qDebug() << "BFMDemod::stop";
     m_running = false;
+    m_earlyIFActive = false;
+    if (m_earlyIFThread) {
+        m_earlyIFWorker->stopWork();
+        m_earlyIFThread->quit();
+        m_earlyIFThread->wait();
+        m_earlyIFThread = nullptr;
+        m_earlyIFWorker = nullptr;
+    }
 	m_thread->quit();
 	m_thread->wait();
     m_basebandSink = nullptr; // Freed by deleteLater when the thread finished

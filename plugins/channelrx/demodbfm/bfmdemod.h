@@ -22,20 +22,15 @@
 #ifndef INCLUDE_BFMDEMOD_H
 #define INCLUDE_BFMDEMOD_H
 
-#include <memory>
-#include <vector>
-
-#include <QMutex>
 #include <QNetworkRequest>
 
 #include "dsp/basebandsamplesink.h"
-#include "dsp/decimatorc.h"
-#include "dsp/nco.h"
 #include "dsp/spectrumvis.h"
 #include "channel/channelapi.h"
 #include "util/message.h"
 
 #include "bfmdemodbaseband.h"
+#include "bfmearlyifworker.h"
 #include "bfmdemodsettings.h"
 
 class QNetworkAccessManager;
@@ -171,7 +166,9 @@ private:
 
 	DeviceAPI *m_deviceAPI;
     QThread *m_thread;
+    QThread *m_earlyIFThread;
     BFMDemodBaseband* m_basebandSink;
+    BFMEarlyIFWorker* m_earlyIFWorker;
     bool m_running;
 	BFMDemodSettings m_settings;
     SpectrumVis m_spectrumVis;
@@ -179,13 +176,6 @@ private:
     int m_earlyIFSampleRate;
     unsigned int m_earlyIFDecimation;
     bool m_earlyIFActive;
-    NCO m_earlyIFNCO;
-    std::unique_ptr<DecimatorC> m_earlyIFDecimator1;
-    std::unique_ptr<DecimatorC> m_earlyIFDecimator2;
-    SampleVector m_earlyIFBuffer;
-    quint64 m_earlyIFInputSamples;
-    quint64 m_earlyIFOutputSamples;
-    quint64 m_earlyIFNextReportInputSamples;
 
     static const int m_udpBlockSize;
 
@@ -193,8 +183,7 @@ private:
     QNetworkRequest m_networkRequest;
 
 	virtual bool handleMessage(const Message& cmd);
-    void configureEarlyIF();
-    void feedEarlyIF(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end);
+	void configureEarlyIF();
     int getBFMInputSampleRate() const;
 	void sendSampleRateToDemodAnalyzer();
 	void applySettings(const QStringList& settingsKeys, const BFMDemodSettings& settings, bool force = false);
