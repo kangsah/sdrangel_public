@@ -10,6 +10,7 @@
 #ifndef INCLUDE_BFMEARLYIFWORKER_H
 #define INCLUDE_BFMEARLYIFWORKER_H
 
+#include <atomic>
 #include <memory>
 
 #include <QMutex>
@@ -50,8 +51,8 @@ private:
     SampleVector m_outputBuffer;
     quint64 m_inputSamples;
     quint64 m_outputSamples;
-    quint64 m_droppedInputSamples;
-    unsigned int m_inputFifoHighWater;
+    std::atomic<quint64> m_droppedInputSamples;
+    std::atomic<unsigned int> m_inputFifoHighWater;
     QMutex m_mutex;
     bool m_active;
     bool m_running;
