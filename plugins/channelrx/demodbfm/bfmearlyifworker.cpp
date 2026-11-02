@@ -24,6 +24,7 @@ BFMEarlyIFWorker::BFMEarlyIFWorker() :
     m_inputSamples(0),
     m_outputSamples(0),
     m_droppedInputSamples(0),
+    m_inputFifoHighWater(0),
     m_active(false),
     m_running(false)
 {
@@ -52,6 +53,7 @@ void BFMEarlyIFWorker::configure(
     m_inputSamples = 0;
     m_outputSamples = 0;
     m_droppedInputSamples = 0;
+    m_inputFifoHighWater = 0;
     m_outputBuffer.clear();
     m_decimator1.reset();
     m_decimator2.reset();
@@ -97,6 +99,7 @@ void BFMEarlyIFWorker::reset()
     m_inputSamples = 0;
     m_outputSamples = 0;
     m_droppedInputSamples = 0;
+    m_inputFifoHighWater = 0;
     m_outputBuffer.clear();
 }
 
@@ -141,9 +144,13 @@ void BFMEarlyIFWorker::feed(
 {
     const unsigned int count = end - begin;
     const unsigned int written = m_inputFifo.write(begin, end);
+    const unsigned int fill = m_inputFifo.fill();
 
+    QMutexLocker mutexLocker(&m_mutex);
+    if (fill > m_inputFifoHighWater) {
+        m_inputFifoHighWater = fill;
+    }
     if (written < count) {
-        QMutexLocker mutexLocker(&m_mutex);
         m_droppedInputSamples += count - written;
     }
 }
@@ -184,6 +191,7 @@ void BFMEarlyIFWorker::process()
                  << "outputRate:" << m_outputSampleRate
                  << "inputFifoFill:" << m_inputFifo.fill()
                  << "inputFifoSize:" << m_inputFifo.size()
+                 << "inputFifoHighWater:" << m_inputFifoHighWater
                  << "droppedInputSamples:" << m_droppedInputSamples;
         m_inputSamples = 0;
         m_outputSamples = 0;

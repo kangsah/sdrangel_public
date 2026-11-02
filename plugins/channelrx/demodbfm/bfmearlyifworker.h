@@ -51,6 +51,7 @@ private:
     quint64 m_inputSamples;
     quint64 m_outputSamples;
     quint64 m_droppedInputSamples;
+    unsigned int m_inputFifoHighWater;
     QMutex m_mutex;
     bool m_active;
     bool m_running;

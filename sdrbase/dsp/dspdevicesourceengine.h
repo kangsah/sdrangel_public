@@ -26,6 +26,8 @@
 #include <QTimer>
 #include <QMutex>
 #include <QWaitCondition>
+#include <QHash>
+#include <QElapsedTimer>
 #include "dsp/dsptypes.h"
 #include "util/messagequeue.h"
 #include "export.h"
@@ -122,10 +124,17 @@ private:
 	qint32 m_qRange;
 	qint32 m_imbalance;
 
+	QElapsedTimer m_workDiagnosticTimer;
+	QHash<QString, quint64> m_sinkWorkNsecs;
+	quint64 m_workNsecs;
+	quint64 m_workInputSamples;
+	quint64 m_workCalls;
+
 	void iqCorrections(SampleVector::iterator begin, SampleVector::iterator end, bool imbalanceCorrection);
 	void dcOffset(SampleVector::iterator begin, SampleVector::iterator end);
 	void imbalance(SampleVector::iterator begin, SampleVector::iterator end);
 	void work(); //!< transfer samples from source to sinks if in running state
+    void reportWorkDiagnostics();
 
 	State gotoIdle();     //!< Go to the idle state
 	State gotoInit();     //!< Go to the acquisition init state from idle

@@ -45,9 +45,13 @@ DSPDeviceSourceEngine::DSPDeviceSourceEngine(uint uid, QObject* parent) :
 	m_qOffset(0),
 	m_iRange(1 << 16),
 	m_qRange(1 << 16),
-	m_imbalance(65536)
+	m_imbalance(65536),
+    m_workNsecs(0),
+    m_workInputSamples(0),
+    m_workCalls(0)
 {
     setState(State::StIdle);
+    m_workDiagnosticTimer.start();
 	connect(&m_inputMessageQueue, SIGNAL(messageEnqueued()), this, SLOT(handleInputMessages()), Qt::QueuedConnection);
 }
 
@@ -311,6 +315,8 @@ void DSPDeviceSourceEngine::imbalance(SampleVector::iterator begin, SampleVector
 void DSPDeviceSourceEngine::work()
 {
 	SampleSinkFifo* sampleFifo = m_deviceSampleSource->getSampleFifo();
+    QElapsedTimer workTimer;
+    workTimer.start();
 	std::size_t samplesDone = 0;
 	bool positiveOnly = m_realElseComplex;
 
@@ -333,7 +339,10 @@ void DSPDeviceSourceEngine::work()
 
 			// feed data to direct sinks
 			for (BasebandSampleSinks::const_iterator it = m_basebandSampleSinks.begin(); it != m_basebandSampleSinks.end(); ++it) {
+                QElapsedTimer sinkTimer;
+                sinkTimer.start();
 				(*it)->feed(part1begin, part1end, positiveOnly);
+                m_sinkWorkNsecs[(*it)->getSinkName()] += sinkTimer.nsecsElapsed();
 			}
 
 		}
@@ -348,7 +357,10 @@ void DSPDeviceSourceEngine::work()
 
 			// feed data to direct sinks
 			for (BasebandSampleSinks::const_iterator it = m_basebandSampleSinks.begin(); it != m_basebandSampleSinks.end(); it++) {
+                QElapsedTimer sinkTimer;
+                sinkTimer.start();
 				(*it)->feed(part2begin, part2end, positiveOnly);
+                m_sinkWorkNsecs[(*it)->getSinkName()] += sinkTimer.nsecsElapsed();
 			}
 
 		}
@@ -357,6 +369,41 @@ void DSPDeviceSourceEngine::work()
 		sampleFifo->readCommit((unsigned int) count);
 		samplesDone += count;
 	}
+
+    m_workNsecs += workTimer.nsecsElapsed();
+    m_workInputSamples += samplesDone;
+    ++m_workCalls;
+    reportWorkDiagnostics();
+}
+
+void DSPDeviceSourceEngine::reportWorkDiagnostics()
+{
+    if (m_workDiagnosticTimer.elapsed() < 2000) {
+        return;
+    }
+
+    const double elapsedSeconds = static_cast<double>(m_workDiagnosticTimer.elapsed()) / 1000.0;
+    qDebug() << "DSPDeviceSourceEngine::work:"
+             << "sampleRate:" << m_sampleRate
+             << "deliveredRate:" << (static_cast<double>(m_workInputSamples) / elapsedSeconds)
+             << "inputSamples:" << m_workInputSamples
+             << "workCalls:" << m_workCalls
+             << "workTimeMs:" << (static_cast<double>(m_workNsecs) / 1000000.0)
+             << "sinkCount:" << m_basebandSampleSinks.size();
+
+    for (auto it = m_sinkWorkNsecs.cbegin(); it != m_sinkWorkNsecs.cend(); ++it) {
+        qDebug() << "DSPDeviceSourceEngine::sink:"
+                 << "name:" << it.key()
+                 << "timeMs:" << (static_cast<double>(it.value()) / 1000000.0)
+                 << "sharePercent:"
+                 << (m_workNsecs == 0 ? 0.0 : (100.0 * static_cast<double>(it.value()) / m_workNsecs));
+    }
+
+    m_workDiagnosticTimer.restart();
+    m_sinkWorkNsecs.clear();
+    m_workNsecs = 0;
+    m_workInputSamples = 0;
+    m_workCalls = 0;
 }
 
 // notStarted -> idle -> init -> running -+
