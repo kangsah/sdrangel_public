@@ -35,8 +35,8 @@ public:
     void startWork();
     void stopWork();
     void feed(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end);
-    unsigned int getInputFifoFill() const { return m_inputFifo.fill(); }
-    unsigned int getInputFifoSize() const { return m_inputFifo.size(); }
+    unsigned int getInputFifoFill() { return m_inputFifo.fill(); }
+    unsigned int getInputFifoSize() { return m_inputFifo.size(); }
 
 private:
     SampleSinkFifo m_inputFifo;
