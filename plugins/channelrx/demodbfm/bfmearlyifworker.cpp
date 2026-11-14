@@ -23,6 +23,8 @@ BFMEarlyIFWorker::BFMEarlyIFWorker() :
     m_decimation(1),
     m_inputSamples(0),
     m_outputSamples(0),
+    m_processingNsecs(0),
+    m_processCalls(0),
     m_droppedInputSamples(0),
     m_inputFifoHighWater(0),
     m_active(false),
@@ -52,9 +54,12 @@ void BFMEarlyIFWorker::configure(
     m_decimation = decimation;
     m_inputSamples = 0;
     m_outputSamples = 0;
+    m_processingNsecs = 0;
+    m_processCalls = 0;
     m_droppedInputSamples.store(0);
     m_inputFifoHighWater.store(0);
     m_outputBuffer.clear();
+    m_reportTimer.restart();
     m_decimator1.reset();
     m_decimator2.reset();
     m_active = inputSampleRate > 0 && outputSampleRate > 0 && decimation > 1;
@@ -98,9 +103,12 @@ void BFMEarlyIFWorker::reset()
     m_inputFifo.reset();
     m_inputSamples = 0;
     m_outputSamples = 0;
+    m_processingNsecs = 0;
+    m_processCalls = 0;
     m_droppedInputSamples.store(0);
     m_inputFifoHighWater.store(0);
     m_outputBuffer.clear();
+    m_reportTimer.restart();
 }
 
 void BFMEarlyIFWorker::startWork()
@@ -164,6 +172,8 @@ void BFMEarlyIFWorker::handleData()
 void BFMEarlyIFWorker::process()
 {
     QMutexLocker mutexLocker(&m_mutex);
+    QElapsedTimer processTimer;
+    processTimer.start();
 
     while (m_inputFifo.fill() > 0) {
         SampleVector::iterator part1begin;
@@ -182,7 +192,19 @@ void BFMEarlyIFWorker::process()
         m_inputFifo.readCommit(count);
     }
 
+    m_processingNsecs += processTimer.nsecsElapsed();
+    ++m_processCalls;
+
     if (m_inputSamples >= 1000000) {
+        const qint64 reportTimeMsecs = std::max<qint64>(m_reportTimer.elapsed(), 1);
+        const double processingTimeSeconds =
+            static_cast<double>(m_processingNsecs) / 1000000000.0;
+        const double processingRate = processingTimeSeconds > 0.0 ?
+            static_cast<double>(m_inputSamples) / processingTimeSeconds : 0.0;
+        const double utilizationPercent =
+            100.0 * static_cast<double>(m_processingNsecs) /
+            (static_cast<double>(reportTimeMsecs) * 1000000.0);
+
         qDebug() << "BFMEarlyIFWorker::process:"
                  << "inputSamples:" << m_inputSamples
                  << "outputSamples:" << m_outputSamples
@@ -193,9 +215,16 @@ void BFMEarlyIFWorker::process()
                  << "inputFifoFill:" << m_inputFifo.fill()
                  << "inputFifoSize:" << m_inputFifo.size()
                  << "inputFifoHighWater:" << m_inputFifoHighWater.load()
-                 << "droppedInputSamples:" << m_droppedInputSamples.load();
+                 << "droppedInputSamples:" << m_droppedInputSamples.load()
+                 << "processingTimeMs:" << static_cast<double>(m_processingNsecs) / 1000000.0
+                 << "processingRate:" << processingRate
+                 << "processingUtilizationPercent:" << utilizationPercent
+                 << "processCalls:" << m_processCalls;
         m_inputSamples = 0;
         m_outputSamples = 0;
+        m_processingNsecs = 0;
+        m_processCalls = 0;
+        m_reportTimer.restart();
     }
 }
 

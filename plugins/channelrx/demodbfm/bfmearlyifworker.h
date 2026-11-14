@@ -13,6 +13,7 @@
 #include <atomic>
 #include <memory>
 
+#include <QElapsedTimer>
 #include <QMutex>
 #include <QObject>
 
@@ -51,8 +52,11 @@ private:
     SampleVector m_outputBuffer;
     quint64 m_inputSamples;
     quint64 m_outputSamples;
+    quint64 m_processingNsecs;
+    quint64 m_processCalls;
     std::atomic<quint64> m_droppedInputSamples;
     std::atomic<unsigned int> m_inputFifoHighWater;
+    QElapsedTimer m_reportTimer;
     QMutex m_mutex;
     bool m_active;
     bool m_running;
