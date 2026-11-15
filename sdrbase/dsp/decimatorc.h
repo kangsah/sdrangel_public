@@ -35,6 +35,7 @@ public:
     DecimatorC();
     void setLog2Decim(unsigned int log2Decim);
     bool decimate(Complex c, Complex& cd);
+    unsigned int decimateBlock(const Complex* input, unsigned int inputCount, Complex* output);
     unsigned int getDecim() const { return m_decim; }
 
 private:

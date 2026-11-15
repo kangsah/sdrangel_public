@@ -51,6 +51,9 @@ private:
     NCO m_nco;
     std::unique_ptr<DecimatorC> m_decimator1;
     std::unique_ptr<DecimatorC> m_decimator2;
+    ComplexVector m_translatedBuffer;
+    ComplexVector m_decimatorBuffer;
+    ComplexVector m_outputComplexBuffer;
     SampleVector m_outputBuffer;
     quint64 m_inputSamples;
     quint64 m_outputSamples;

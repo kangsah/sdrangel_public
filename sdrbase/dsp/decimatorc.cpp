@@ -17,6 +17,8 @@
 
 #include "decimatorc.h"
 
+#include <algorithm>
+
 DecimatorC::DecimatorC() :
     m_log2Decim(0),
     m_decim(1)
@@ -48,6 +50,51 @@ bool DecimatorC::decimate(Complex c, Complex& cd)
         return decimate64(c, cd);
     } else {
         return true; // no decimation
+    }
+}
+
+unsigned int DecimatorC::decimateBlock(
+        const Complex* input,
+        unsigned int inputCount,
+        Complex* output)
+{
+    if (!input || !output || inputCount == 0) {
+        return 0;
+    }
+
+    if (m_log2Decim == 0) {
+        std::copy_n(input, inputCount, output);
+        return inputCount;
+    }
+
+    auto process = [this, input, inputCount, output](auto decimateFunction) {
+        unsigned int outputCount = 0;
+
+        for (unsigned int i = 0; i < inputCount; ++i) {
+            if ((this->*decimateFunction)(input[i], output[outputCount])) {
+                ++outputCount;
+            }
+        }
+
+        return outputCount;
+    };
+
+    switch (m_log2Decim)
+    {
+    case 1:
+        return process(&DecimatorC::decimate2);
+    case 2:
+        return process(&DecimatorC::decimate4);
+    case 3:
+        return process(&DecimatorC::decimate8);
+    case 4:
+        return process(&DecimatorC::decimate16);
+    case 5:
+        return process(&DecimatorC::decimate32);
+    case 6:
+        return process(&DecimatorC::decimate64);
+    default:
+        return 0;
     }
 }
 

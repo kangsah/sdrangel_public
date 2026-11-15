@@ -58,6 +58,9 @@ void BFMEarlyIFWorker::configure(
     m_processCalls = 0;
     m_droppedInputSamples.store(0);
     m_inputFifoHighWater.store(0);
+    m_translatedBuffer.clear();
+    m_decimatorBuffer.clear();
+    m_outputComplexBuffer.clear();
     m_outputBuffer.clear();
     m_reportTimer.restart();
     m_decimator1.reset();
@@ -107,6 +110,9 @@ void BFMEarlyIFWorker::reset()
     m_processCalls = 0;
     m_droppedInputSamples.store(0);
     m_inputFifoHighWater.store(0);
+    m_translatedBuffer.clear();
+    m_decimatorBuffer.clear();
+    m_outputComplexBuffer.clear();
     m_outputBuffer.clear();
     m_reportTimer.restart();
 }
@@ -247,48 +253,43 @@ void BFMEarlyIFWorker::processPart(
     }
 
     const quint64 inputBlockSamples = end - begin;
-    DecimatorC *decimator1 = m_decimator1.get();
+    const unsigned int inputSamples = static_cast<unsigned int>(inputBlockSamples);
+    m_translatedBuffer.resize(inputSamples);
+
+    for (unsigned int i = 0; i < inputSamples; ++i) {
+        const Sample& input = begin[i];
+        const Complex normalizedInput(
+            input.real() / SDR_RX_SCALEF,
+            input.imag() / SDR_RX_SCALEF);
+        m_translatedBuffer[i] = normalizedInput * m_nco.nextIQ();
+    }
+
+    const unsigned int firstOutputCapacity =
+        inputSamples / m_decimator1->getDecim() + 2;
+    m_decimatorBuffer.resize(firstOutputCapacity);
+    const unsigned int firstOutputCount = m_decimator1->decimateBlock(
+        m_translatedBuffer.data(),
+        inputSamples,
+        m_decimatorBuffer.data());
+
+    const Complex* outputBegin = m_decimatorBuffer.data();
+    unsigned int outputCount = firstOutputCount;
 
     if (m_decimator2) {
-        DecimatorC *decimator2 = m_decimator2.get();
+        m_outputComplexBuffer.resize(firstOutputCount / m_decimator2->getDecim() + 2);
+        outputCount = m_decimator2->decimateBlock(
+            m_decimatorBuffer.data(),
+            firstOutputCount,
+            m_outputComplexBuffer.data());
+        outputBegin = m_outputComplexBuffer.data();
+    }
 
-        for (auto it = begin; it != end; ++it) {
-            const Complex input(
-                it->real() / SDR_RX_SCALEF,
-                it->imag() / SDR_RX_SCALEF);
-            const Complex translated = input * m_nco.nextIQ();
-            Complex stage1;
-            Complex stage2;
-
-            if (!decimator1->decimate(translated, stage1)
-                || !decimator2->decimate(stage1, stage2))
-            {
-                continue;
-            }
-
-            m_outputBuffer.emplace_back(
-                stage2.real() * SDR_RX_SCALEF,
-                stage2.imag() * SDR_RX_SCALEF);
-            ++m_outputSamples;
-        }
-    } else {
-        for (auto it = begin; it != end; ++it) {
-            const Complex input(
-                it->real() / SDR_RX_SCALEF,
-                it->imag() / SDR_RX_SCALEF);
-            const Complex translated = input * m_nco.nextIQ();
-            Complex output;
-
-            if (!decimator1->decimate(translated, output)) {
-                continue;
-            }
-
-            m_outputBuffer.emplace_back(
-                output.real() * SDR_RX_SCALEF,
-                output.imag() * SDR_RX_SCALEF);
-            ++m_outputSamples;
-        }
+    for (unsigned int i = 0; i < outputCount; ++i) {
+        m_outputBuffer.emplace_back(
+            outputBegin[i].real() * SDR_RX_SCALEF,
+            outputBegin[i].imag() * SDR_RX_SCALEF);
     }
 
     m_inputSamples += inputBlockSamples;
+    m_outputSamples += outputCount;
 }
