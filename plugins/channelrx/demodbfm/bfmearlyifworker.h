@@ -41,6 +41,8 @@ public:
     unsigned int getInputFifoSize() { return m_inputFifo.size(); }
 
 private:
+    static constexpr unsigned int m_maxProcessSamples = 1U << 20;
+
     SampleSinkFifo m_inputFifo;
     BFMDemodBaseband *m_output;
     int m_inputSampleRate;

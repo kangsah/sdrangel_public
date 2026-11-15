@@ -175,13 +175,16 @@ void BFMEarlyIFWorker::process()
     QElapsedTimer processTimer;
     processTimer.start();
 
-    while (m_inputFifo.fill() > 0) {
+    const unsigned int availableSamples = m_inputFifo.fill();
+    const unsigned int processSamples = std::min(availableSamples, m_maxProcessSamples);
+
+    if (processSamples > 0) {
         SampleVector::iterator part1begin;
         SampleVector::iterator part1end;
         SampleVector::iterator part2begin;
         SampleVector::iterator part2end;
         const unsigned int count = m_inputFifo.readBegin(
-            m_inputFifo.fill(),
+            processSamples,
             &part1begin,
             &part1end,
             &part2begin,
@@ -201,10 +204,7 @@ void BFMEarlyIFWorker::process()
     m_processingNsecs += processTimer.nsecsElapsed();
     ++m_processCalls;
 
-    m_processingNsecs += processTimer.nsecsElapsed();
-    ++m_processCalls;
-
-    if (m_inputSamples >= 1000000) {
+    if ((m_reportTimer.elapsed() >= 2000) && (m_inputSamples > 0)) {
         const qint64 reportTimeMsecs = std::max<qint64>(m_reportTimer.elapsed(), 1);
         const double processingTimeSeconds =
             static_cast<double>(m_processingNsecs) / 1000000000.0;
@@ -228,7 +228,8 @@ void BFMEarlyIFWorker::process()
                  << "processingTimeMs:" << static_cast<double>(m_processingNsecs) / 1000000.0
                  << "processingRate:" << processingRate
                  << "processingUtilizationPercent:" << utilizationPercent
-                 << "processCalls:" << m_processCalls;
+                 << "processCalls:" << m_processCalls
+                 << "processBlockSamples:" << m_maxProcessSamples;
         m_inputSamples = 0;
         m_outputSamples = 0;
         m_processingNsecs = 0;
