@@ -27,6 +27,8 @@
 #include "dsp/inthalfbandfiltereof.h"
 #include "export.h"
 
+class NCO;
+
 #define DECIMATORSXS_HB_FILTER_ORDER 64
 
 class SDRBASE_API DecimatorC
@@ -36,6 +38,11 @@ public:
     void setLog2Decim(unsigned int log2Decim);
     bool decimate(Complex c, Complex& cd);
     unsigned int decimateBlock(const Complex* input, unsigned int inputCount, Complex* output);
+    unsigned int decimateBlockNCO(
+        const Sample* input,
+        unsigned int inputCount,
+        NCO& nco,
+        Complex* output);
     unsigned int getDecim() const { return m_decim; }
 
 private:

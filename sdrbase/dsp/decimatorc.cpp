@@ -16,6 +16,7 @@
 ///////////////////////////////////////////////////////////////////////////////////
 
 #include "decimatorc.h"
+#include "dsp/nco.h"
 
 #include <algorithm>
 
@@ -81,6 +82,60 @@ unsigned int DecimatorC::decimateBlock(
 
     switch (m_log2Decim)
     {
+    case 1:
+        return process(&DecimatorC::decimate2);
+    case 2:
+        return process(&DecimatorC::decimate4);
+    case 3:
+        return process(&DecimatorC::decimate8);
+    case 4:
+        return process(&DecimatorC::decimate16);
+    case 5:
+        return process(&DecimatorC::decimate32);
+    case 6:
+        return process(&DecimatorC::decimate64);
+    default:
+        return 0;
+    }
+}
+
+unsigned int DecimatorC::decimateBlockNCO(
+        const Sample* input,
+        unsigned int inputCount,
+        NCO& nco,
+        Complex* output)
+{
+    if (!input || !output || inputCount == 0) {
+        return 0;
+    }
+
+    auto process = [this, input, inputCount, &nco, output](auto decimateFunction) {
+        unsigned int outputCount = 0;
+
+        for (unsigned int i = 0; i < inputCount; ++i) {
+            const Complex normalizedInput(
+                input[i].real() / SDR_RX_SCALEF,
+                input[i].imag() / SDR_RX_SCALEF);
+            const Complex translated = normalizedInput * nco.nextIQ();
+
+            if ((this->*decimateFunction)(translated, output[outputCount])) {
+                ++outputCount;
+            }
+        }
+
+        return outputCount;
+    };
+
+    switch (m_log2Decim)
+    {
+    case 0:
+        for (unsigned int i = 0; i < inputCount; ++i) {
+            const Complex normalizedInput(
+                input[i].real() / SDR_RX_SCALEF,
+                input[i].imag() / SDR_RX_SCALEF);
+            output[i] = normalizedInput * nco.nextIQ();
+        }
+        return inputCount;
     case 1:
         return process(&DecimatorC::decimate2);
     case 2:

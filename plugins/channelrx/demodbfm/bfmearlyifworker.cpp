@@ -58,7 +58,6 @@ void BFMEarlyIFWorker::configure(
     m_processCalls = 0;
     m_droppedInputSamples.store(0);
     m_inputFifoHighWater.store(0);
-    m_translatedBuffer.clear();
     m_decimatorBuffer.clear();
     m_outputComplexBuffer.clear();
     m_outputBuffer.clear();
@@ -110,7 +109,6 @@ void BFMEarlyIFWorker::reset()
     m_processCalls = 0;
     m_droppedInputSamples.store(0);
     m_inputFifoHighWater.store(0);
-    m_translatedBuffer.clear();
     m_decimatorBuffer.clear();
     m_outputComplexBuffer.clear();
     m_outputBuffer.clear();
@@ -254,22 +252,18 @@ void BFMEarlyIFWorker::processPart(
 
     const quint64 inputBlockSamples = end - begin;
     const unsigned int inputSamples = static_cast<unsigned int>(inputBlockSamples);
-    m_translatedBuffer.resize(inputSamples);
 
-    for (unsigned int i = 0; i < inputSamples; ++i) {
-        const Sample& input = begin[i];
-        const Complex normalizedInput(
-            input.real() / SDR_RX_SCALEF,
-            input.imag() / SDR_RX_SCALEF);
-        m_translatedBuffer[i] = normalizedInput * m_nco.nextIQ();
+    if (inputSamples == 0) {
+        return;
     }
 
     const unsigned int firstOutputCapacity =
         inputSamples / m_decimator1->getDecim() + 2;
     m_decimatorBuffer.resize(firstOutputCapacity);
-    const unsigned int firstOutputCount = m_decimator1->decimateBlock(
-        m_translatedBuffer.data(),
+    const unsigned int firstOutputCount = m_decimator1->decimateBlockNCO(
+        &begin[0],
         inputSamples,
+        m_nco,
         m_decimatorBuffer.data());
 
     const Complex* outputBegin = m_decimatorBuffer.data();
