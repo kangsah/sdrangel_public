@@ -187,10 +187,19 @@ void BFMEarlyIFWorker::process()
             &part2begin,
             &part2end);
 
+        m_outputBuffer.clear();
+        m_outputBuffer.reserve(static_cast<int>(count / m_decimation) + 2);
         processPart(part1begin, part1end);
         processPart(part2begin, part2end);
         m_inputFifo.readCommit(count);
+
+        if (m_output && !m_outputBuffer.empty()) {
+            m_output->feed(m_outputBuffer.cbegin(), m_outputBuffer.cend());
+        }
     }
+
+    m_processingNsecs += processTimer.nsecsElapsed();
+    ++m_processCalls;
 
     m_processingNsecs += processTimer.nsecsElapsed();
     ++m_processCalls;
@@ -237,40 +246,48 @@ void BFMEarlyIFWorker::processPart(
     }
 
     const quint64 inputBlockSamples = end - begin;
-    m_outputBuffer.clear();
-    m_outputBuffer.reserve(static_cast<int>(inputBlockSamples / m_decimation) + 2);
+    DecimatorC *decimator1 = m_decimator1.get();
 
-    for (auto it = begin; it != end; ++it) {
-        const Complex input(
-            it->real() / SDR_RX_SCALEF,
-            it->imag() / SDR_RX_SCALEF);
-        const Complex translated = input * m_nco.nextIQ();
-        Complex stage1;
-        Complex stage2;
-        Complex output = translated;
+    if (m_decimator2) {
+        DecimatorC *decimator2 = m_decimator2.get();
 
-        if (m_decimator1 && !m_decimator1->decimate(output, stage1)) {
-            continue;
-        }
-        if (m_decimator1) {
-            output = stage1;
-        }
-        if (m_decimator2 && !m_decimator2->decimate(output, stage2)) {
-            continue;
-        }
-        if (m_decimator2) {
-            output = stage2;
-        }
+        for (auto it = begin; it != end; ++it) {
+            const Complex input(
+                it->real() / SDR_RX_SCALEF,
+                it->imag() / SDR_RX_SCALEF);
+            const Complex translated = input * m_nco.nextIQ();
+            Complex stage1;
+            Complex stage2;
 
-        m_outputBuffer.emplace_back(
-            output.real() * SDR_RX_SCALEF,
-            output.imag() * SDR_RX_SCALEF);
-        ++m_outputSamples;
+            if (!decimator1->decimate(translated, stage1)
+                || !decimator2->decimate(stage1, stage2))
+            {
+                continue;
+            }
+
+            m_outputBuffer.emplace_back(
+                stage2.real() * SDR_RX_SCALEF,
+                stage2.imag() * SDR_RX_SCALEF);
+            ++m_outputSamples;
+        }
+    } else {
+        for (auto it = begin; it != end; ++it) {
+            const Complex input(
+                it->real() / SDR_RX_SCALEF,
+                it->imag() / SDR_RX_SCALEF);
+            const Complex translated = input * m_nco.nextIQ();
+            Complex output;
+
+            if (!decimator1->decimate(translated, output)) {
+                continue;
+            }
+
+            m_outputBuffer.emplace_back(
+                output.real() * SDR_RX_SCALEF,
+                output.imag() * SDR_RX_SCALEF);
+            ++m_outputSamples;
+        }
     }
 
     m_inputSamples += inputBlockSamples;
-
-    if (!m_outputBuffer.empty()) {
-        m_output->feed(m_outputBuffer.cbegin(), m_outputBuffer.cend());
-    }
 }
