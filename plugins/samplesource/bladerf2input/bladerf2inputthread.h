@@ -26,6 +26,7 @@
 #include <QThread>
 #include <QMutex>
 #include <QWaitCondition>
+#include <QElapsedTimer>
 
 #include <libbladeRF.h>
 
@@ -88,6 +89,13 @@ private:
     void callbackSIIQ(const qint16* buf, qint32 len, unsigned int channel = 0);
     void callbackSIQI(const qint16* buf, qint32 len, unsigned int channel = 0);
     void callbackMI(const qint16* buf, qint32 samplesPerChannel);
+    void reportRateDiagnostics(unsigned int channel, quint64 inputSamples, quint64 outputSamples, qint64 processingNsecs);
+
+    QElapsedTimer m_rateDiagnosticTimer;
+    quint64 m_rateInputSamples;
+    quint64 m_rateOutputSamples;
+    quint64 m_rateProcessingNsecs;
+    quint64 m_rateCallbacks;
 };
 
 

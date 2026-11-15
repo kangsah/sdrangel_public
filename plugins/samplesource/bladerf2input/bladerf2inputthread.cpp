@@ -24,9 +24,14 @@ BladeRF2InputThread::BladeRF2InputThread(struct bladerf* dev, unsigned int nbRxC
     m_running(false),
     m_dev(dev),
     m_nbChannels(nbRxChannels),
-    m_iqOrder(true)
+    m_iqOrder(true),
+    m_rateInputSamples(0),
+    m_rateOutputSamples(0),
+    m_rateProcessingNsecs(0),
+    m_rateCallbacks(0)
 {
     setObjectName("BladeRF2Input");
+    m_rateDiagnosticTimer.start();
     qDebug("BladeRF2InputThread::BladeRF2InputThread");
     m_channels = new Channel[nbRxChannels];
 
@@ -72,6 +77,11 @@ void BladeRF2InputThread::run()
     int res;
 
     m_running = true;
+    m_rateDiagnosticTimer.restart();
+    m_rateInputSamples = 0;
+    m_rateOutputSamples = 0;
+    m_rateProcessingNsecs = 0;
+    m_rateCallbacks = 0;
     m_startWaiter.wakeAll();
 
     unsigned int nbFifos = getNbFifos();
@@ -220,6 +230,8 @@ void BladeRF2InputThread::callbackMI(const qint16* buf, qint32 samplesPerChannel
 
 void BladeRF2InputThread::callbackSIIQ(const qint16* buf, qint32 len, unsigned int channel)
 {
+    QElapsedTimer callbackTimer;
+    callbackTimer.start();
     SampleVector::iterator it = m_channels[channel].m_convertBuffer.begin();
 
     if (m_channels[channel].m_log2Decim == 0)
@@ -309,10 +321,17 @@ void BladeRF2InputThread::callbackSIIQ(const qint16* buf, qint32 len, unsigned i
     }
 
     m_channels[channel].m_sampleFifo->write(m_channels[channel].m_convertBuffer.begin(), it);
+    reportRateDiagnostics(
+        channel,
+        static_cast<quint64>(len / 2),
+        static_cast<quint64>(it - m_channels[channel].m_convertBuffer.begin()),
+        callbackTimer.nsecsElapsed());
 }
 
 void BladeRF2InputThread::callbackSIQI(const qint16* buf, qint32 len, unsigned int channel)
 {
+    QElapsedTimer callbackTimer;
+    callbackTimer.start();
     SampleVector::iterator it = m_channels[channel].m_convertBuffer.begin();
 
     if (m_channels[channel].m_log2Decim == 0)
@@ -402,4 +421,48 @@ void BladeRF2InputThread::callbackSIQI(const qint16* buf, qint32 len, unsigned i
     }
 
     m_channels[channel].m_sampleFifo->write(m_channels[channel].m_convertBuffer.begin(), it);
+    reportRateDiagnostics(
+        channel,
+        static_cast<quint64>(len / 2),
+        static_cast<quint64>(it - m_channels[channel].m_convertBuffer.begin()),
+        callbackTimer.nsecsElapsed());
+}
+
+void BladeRF2InputThread::reportRateDiagnostics(
+        unsigned int channel,
+        quint64 inputSamples,
+        quint64 outputSamples,
+        qint64 processingNsecs)
+{
+    m_rateInputSamples += inputSamples;
+    m_rateOutputSamples += outputSamples;
+    m_rateProcessingNsecs += processingNsecs;
+    ++m_rateCallbacks;
+
+    const qint64 elapsedMsecs = m_rateDiagnosticTimer.elapsed();
+    if (elapsedMsecs < 2000) {
+        return;
+    }
+
+    const double elapsedSeconds = static_cast<double>(elapsedMsecs) / 1000.0;
+    qDebug() << "BladeRF2InputThread::rate:"
+             << "channel:" << channel
+             << "rawInputRate:" << (static_cast<double>(m_rateInputSamples) / elapsedSeconds)
+             << "applicationOutputRate:" << (static_cast<double>(m_rateOutputSamples) / elapsedSeconds)
+             << "inputSamples:" << m_rateInputSamples
+             << "outputSamples:" << m_rateOutputSamples
+             << "decimationRatio:"
+             << (m_rateOutputSamples == 0 ? 0.0 :
+                 static_cast<double>(m_rateInputSamples) / m_rateOutputSamples)
+             << "processingTimeMs:" << (static_cast<double>(m_rateProcessingNsecs) / 1000000.0)
+             << "processingUtilizationPercent:"
+             << (100.0 * static_cast<double>(m_rateProcessingNsecs) /
+                 (static_cast<double>(elapsedMsecs) * 1000000.0))
+             << "callbacks:" << m_rateCallbacks;
+
+    m_rateDiagnosticTimer.restart();
+    m_rateInputSamples = 0;
+    m_rateOutputSamples = 0;
+    m_rateProcessingNsecs = 0;
+    m_rateCallbacks = 0;
 }
