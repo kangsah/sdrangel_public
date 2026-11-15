@@ -132,6 +132,7 @@ set(sdrbase_SOURCES
     dsp/decimatorsff.cpp
     dsp/decimatorsfi.cpp
     dsp/decimatorc.cpp
+    dsp/asynchronoussamplesink.cpp
     dsp/dspcommands.cpp
     dsp/dspengine.cpp
     dsp/dspdevicesourceengine.cpp
@@ -378,6 +379,7 @@ set(sdrbase_HEADERS
     dsp/decimatorsfi.h
     dsp/decimatorsu.h
     dsp/decimatorc.h
+    dsp/asynchronoussamplesink.h
     dsp/interpolators.h
     dsp/interpolatorsif.h
     dsp/dspcommands.h

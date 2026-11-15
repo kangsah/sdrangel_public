@@ -21,6 +21,7 @@
 
 #include "dspdevicesourceengine.h"
 
+#include "asynchronoussamplesink.h"
 #include <dsp/basebandsamplesink.h>
 #include <dsp/devicesamplesource.h>
 #include <stdio.h>
@@ -133,14 +134,51 @@ void DSPDeviceSourceEngine::removeSink(BasebandSampleSink* sink, bool deleting)
     {
         QMetaObject::invokeMethod(this, [this, sink]() {
 			// Same code as for DSPRemoveBasebandSampleSink in handleMessage
-            m_basebandSampleSinks.remove(sink);
-            emit sinkRemoved();
+            unregisterSink(sink, true);
         }, Qt::BlockingQueuedConnection);
         return;
     }
 
 	auto *cmd = new DSPRemoveBasebandSampleSink(sink, deleting);
     getInputMessageQueue()->push(cmd);
+}
+
+BasebandSampleSink *DSPDeviceSourceEngine::registerSink(BasebandSampleSink *sink)
+{
+    if (sink->getSinkName() == "SpectrumVis") {
+        auto asyncSink = std::make_unique<AsynchronousSampleSink>(sink);
+        BasebandSampleSink *registeredSink = asyncSink.get();
+        m_asyncSinks.emplace(sink, std::move(asyncSink));
+        return registeredSink;
+    }
+
+    return sink;
+}
+
+void DSPDeviceSourceEngine::unregisterSink(BasebandSampleSink *sink, bool deleting)
+{
+    BasebandSampleSink *registeredSink = sink;
+    auto asyncSink = m_asyncSinks.find(sink);
+
+    if (asyncSink != m_asyncSinks.end()) {
+        registeredSink = asyncSink->second.get();
+
+        if (deleting) {
+            asyncSink->second->stopWithoutTarget();
+        } else if (m_state == State::StRunning) {
+            asyncSink->second->stop();
+        }
+
+        m_basebandSampleSinks.remove(registeredSink);
+        m_asyncSinks.erase(asyncSink);
+    } else {
+        if (!deleting && (m_state == State::StRunning)) {
+            sink->stop();
+        }
+        m_basebandSampleSinks.remove(registeredSink);
+    }
+
+    emit sinkRemoved();
 }
 
 void DSPDeviceSourceEngine::configureCorrections(bool dcOffsetCorrection, bool iqImbalanceCorrection)
@@ -685,29 +723,23 @@ bool DSPDeviceSourceEngine::handleMessage(const Message& message)
 	{
         auto cmd = (const DSPAddBasebandSampleSink&) message;
 		BasebandSampleSink* sink = cmd.getSampleSink();
-		m_basebandSampleSinks.push_back(sink);
+        BasebandSampleSink* registeredSink = registerSink(sink);
+        m_basebandSampleSinks.push_back(registeredSink);
         // initialize sample rate and center frequency in the sink:
         auto *msg = new DSPSignalNotification(m_sampleRate, m_centerFrequency);
-        sink->pushMessage(msg);
+        registeredSink->pushMessage(msg);
         // start the sink:
         if(m_state == State::StRunning) {
-            sink->start();
+            registeredSink->start();
         }
 		return true;
 	}
 	else if (DSPRemoveBasebandSampleSink::match(message))
 	{
         auto cmd = (const DSPRemoveBasebandSampleSink&) message;
-		BasebandSampleSink* sink = cmd.getSampleSink();
-		bool deleting = cmd.getDeleting();
-
-		// Don't dereference sink if deleting, as it may have already been deleted
-		if (!deleting && (m_state == State::StRunning)) {
-			sink->stop();
-		}
-
-		m_basebandSampleSinks.remove(sink);
-		emit sinkRemoved();
+        BasebandSampleSink* sink = cmd.getSampleSink();
+        bool deleting = cmd.getDeleting();
+        unregisterSink(sink, deleting);
 		return true;
 	}
     else if (DSPAcquisitionError::match(message))

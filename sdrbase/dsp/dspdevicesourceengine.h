@@ -28,6 +28,8 @@
 #include <QWaitCondition>
 #include <QHash>
 #include <QElapsedTimer>
+#include <memory>
+#include <unordered_map>
 #include "dsp/dsptypes.h"
 #include "util/messagequeue.h"
 #include "export.h"
@@ -35,6 +37,7 @@
 
 class DeviceSampleSource;
 class BasebandSampleSink;
+class AsynchronousSampleSink;
 
 class SDRBASE_API DSPDeviceSourceEngine : public QObject {
 	Q_OBJECT
@@ -88,6 +91,7 @@ private:
 
 	using BasebandSampleSinks = std::list<BasebandSampleSink *>;
 	BasebandSampleSinks m_basebandSampleSinks; //!< sample sinks within main thread (usually spectrum, file output)
+    std::unordered_map<BasebandSampleSink*, std::unique_ptr<AsynchronousSampleSink>> m_asyncSinks;
 
 	uint m_sampleRate;
 	quint64 m_centerFrequency;
@@ -135,6 +139,8 @@ private:
 	void imbalance(SampleVector::iterator begin, SampleVector::iterator end);
 	void work(); //!< transfer samples from source to sinks if in running state
     void reportWorkDiagnostics();
+    BasebandSampleSink *registerSink(BasebandSampleSink *sink);
+    void unregisterSink(BasebandSampleSink *sink, bool deleting);
 
 	State gotoIdle();     //!< Go to the idle state
 	State gotoInit();     //!< Go to the acquisition init state from idle
