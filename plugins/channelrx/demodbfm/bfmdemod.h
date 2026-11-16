@@ -22,6 +22,8 @@
 #ifndef INCLUDE_BFMDEMOD_H
 #define INCLUDE_BFMDEMOD_H
 
+#include <memory>
+
 #include <QNetworkRequest>
 
 #include "dsp/basebandsamplesink.h"
@@ -31,6 +33,7 @@
 
 #include "bfmdemodbaseband.h"
 #include "bfmearlyifworker.h"
+#include "bfmsharedvfobranch.h"
 #include "bfmdemodsettings.h"
 
 class QNetworkAccessManager;
@@ -166,9 +169,9 @@ private:
 
 	DeviceAPI *m_deviceAPI;
     QThread *m_thread;
-    QThread *m_earlyIFThread;
     BFMDemodBaseband* m_basebandSink;
     BFMEarlyIFWorker* m_earlyIFWorker;
+    std::shared_ptr<BFMSharedVFOBranch> m_earlyIFBranch;
     bool m_running;
 	BFMDemodSettings m_settings;
     SpectrumVis m_spectrumVis;
@@ -176,6 +179,7 @@ private:
     int m_earlyIFSampleRate;
     unsigned int m_earlyIFDecimation;
     bool m_earlyIFActive;
+    QString m_earlyIFBranchKey;
 
     static const int m_udpBlockSize;
 
@@ -184,6 +188,7 @@ private:
 
 	virtual bool handleMessage(const Message& cmd);
 	void configureEarlyIF();
+	void releaseEarlyIFBranch();
     int getBFMInputSampleRate() const;
 	void sendSampleRateToDemodAnalyzer();
 	void applySettings(const QStringList& settingsKeys, const BFMDemodSettings& settings, bool force = false);

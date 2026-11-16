@@ -56,7 +56,6 @@ BFMDemod::BFMDemod(DeviceAPI *deviceAPI) :
     ChannelAPI(m_channelIdURI, ChannelAPI::StreamSingleSink),
     m_deviceAPI(deviceAPI),
     m_thread(nullptr),
-    m_earlyIFThread(nullptr),
     m_basebandSink(nullptr),
     m_earlyIFWorker(nullptr),
     m_running(false),
@@ -64,7 +63,8 @@ BFMDemod::BFMDemod(DeviceAPI *deviceAPI) :
     m_basebandSampleRate(0),
     m_earlyIFSampleRate(0),
     m_earlyIFDecimation(1),
-    m_earlyIFActive(false)
+    m_earlyIFActive(false),
+    m_earlyIFBranchKey()
 {
 	setObjectName(m_channelId);
 	applySettings(QStringList(), m_settings, true);
@@ -135,6 +135,7 @@ void BFMDemod::configureEarlyIF()
     m_earlyIFDecimation = 1;
     m_earlyIFActive = false;
     if (!m_settings.m_useCappedIF || (m_basebandSampleRate <= 0)) {
+        releaseEarlyIFBranch();
         return;
     }
 
@@ -145,6 +146,7 @@ void BFMDemod::configureEarlyIF()
     }
 
     if (m_earlyIFDecimation <= 1) {
+        releaseEarlyIFBranch();
         return;
     }
 
@@ -160,12 +162,36 @@ void BFMDemod::configureEarlyIF()
                    << "maximumRFBandwidth:" << maximumRFBandwidth;
         m_earlyIFSampleRate = m_basebandSampleRate;
         m_earlyIFDecimation = 1;
+        releaseEarlyIFBranch();
         return;
     }
 
     m_earlyIFActive = true;
-    if (m_earlyIFWorker) {
-        m_earlyIFWorker->configure(
+    if (!m_basebandSink) {
+        return;
+    }
+
+    const QString branchKey = QString("%1:%2:%3:%4:%5:%6")
+        .arg(QString::number(reinterpret_cast<quintptr>(m_deviceAPI), 16))
+        .arg(m_basebandSampleRate)
+        .arg(m_earlyIFSampleRate)
+        .arg(m_earlyIFDecimation)
+        .arg(m_settings.m_inputFrequencyOffset)
+        .arg(m_settings.m_rfBandwidth);
+
+    if (!m_earlyIFBranch || (m_earlyIFBranchKey != branchKey)) {
+        releaseEarlyIFBranch();
+        m_earlyIFBranch = BFMSharedVFOBranch::acquire(
+            branchKey,
+            m_basebandSampleRate,
+            m_earlyIFSampleRate,
+            m_earlyIFDecimation,
+            m_settings.m_inputFrequencyOffset,
+            m_basebandSink);
+        m_earlyIFWorker = m_earlyIFBranch->worker();
+        m_earlyIFBranchKey = branchKey;
+    } else {
+        m_earlyIFBranch->configure(
             m_basebandSampleRate,
             m_earlyIFSampleRate,
             m_earlyIFDecimation,
@@ -206,16 +232,6 @@ void BFMDemod::start()
     m_basebandSink->startWork();
     m_thread->start();
 
-    m_earlyIFThread = new QThread();
-    m_earlyIFThread->setObjectName("BFMEarlyIF");
-    m_earlyIFWorker = new BFMEarlyIFWorker();
-    m_earlyIFWorker->setOutput(m_basebandSink);
-    m_earlyIFWorker->moveToThread(m_earlyIFThread);
-    QObject::connect(m_earlyIFThread, &QThread::finished, m_earlyIFWorker, &QObject::deleteLater);
-    QObject::connect(m_earlyIFThread, &QThread::finished, m_earlyIFThread, &QThread::deleteLater);
-    m_earlyIFWorker->startWork();
-    m_earlyIFThread->start();
-
     configureEarlyIF();
     DSPSignalNotification *dspMsg = new DSPSignalNotification(getBFMInputSampleRate(), 0);
     m_basebandSink->getInputMessageQueue()->push(dspMsg);
@@ -244,16 +260,21 @@ void BFMDemod::stop()
     qDebug() << "BFMDemod::stop";
     m_running = false;
     m_earlyIFActive = false;
-    if (m_earlyIFThread) {
-        m_earlyIFWorker->stopWork();
-        m_earlyIFThread->quit();
-        m_earlyIFThread->wait();
-        m_earlyIFThread = nullptr;
-        m_earlyIFWorker = nullptr;
-    }
+    releaseEarlyIFBranch();
 	m_thread->quit();
 	m_thread->wait();
     m_basebandSink = nullptr; // Freed by deleteLater when the thread finished
+}
+
+void BFMDemod::releaseEarlyIFBranch()
+{
+    if (m_earlyIFBranch) {
+        m_earlyIFBranch->removeOutput(m_basebandSink);
+        m_earlyIFBranch.reset();
+    }
+
+    m_earlyIFWorker = nullptr;
+    m_earlyIFBranchKey.clear();
 }
 
 bool BFMDemod::handleMessage(const Message& cmd)

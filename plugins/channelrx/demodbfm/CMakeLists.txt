@@ -7,6 +7,7 @@ set(bfm_SOURCES
     bfmdemodsink.cpp
     bfmdemodbaseband.cpp
     bfmearlyifworker.cpp
+    bfmsharedvfobranch.cpp
     bfmdemodreport.cpp
     bfmdemodwebapiadapter.cpp
 	bfmplugin.cpp
@@ -23,6 +24,7 @@ set(bfm_HEADERS
     bfmdemodsink.h
     bfmdemodbaseband.h
     bfmearlyifworker.h
+    bfmsharedvfobranch.h
     bfmdemodreport.h
     bfmdemodwebapiadapter.h
 	bfmplugin.h
