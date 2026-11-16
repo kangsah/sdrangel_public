@@ -16,6 +16,7 @@
 #include <QElapsedTimer>
 #include <QMutex>
 #include <QObject>
+#include <QVector>
 
 #include "dsp/decimatorc.h"
 #include "dsp/nco.h"
@@ -31,7 +32,9 @@ public:
     BFMEarlyIFWorker();
     ~BFMEarlyIFWorker() override;
 
-    void setOutput(BFMDemodBaseband *output) { m_output = output; }
+    void setOutput(BFMDemodBaseband *output);
+    void addOutput(BFMDemodBaseband *output);
+    void removeOutput(BFMDemodBaseband *output);
     void configure(int inputSampleRate, int outputSampleRate, unsigned int decimation, qint64 frequencyOffset);
     void reset();
     void startWork();
@@ -44,7 +47,7 @@ private:
     static constexpr unsigned int m_maxProcessSamples = 1U << 20;
 
     SampleSinkFifo m_inputFifo;
-    BFMDemodBaseband *m_output;
+    QVector<BFMDemodBaseband*> m_outputs;
     int m_inputSampleRate;
     int m_outputSampleRate;
     unsigned int m_decimation;

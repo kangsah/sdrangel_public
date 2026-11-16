@@ -8,6 +8,7 @@
 ///////////////////////////////////////////////////////////////////////////////////
 
 #include <algorithm>
+#include <utility>
 
 #include <QDebug>
 
@@ -17,7 +18,6 @@
 #include "bfmearlyifworker.h"
 
 BFMEarlyIFWorker::BFMEarlyIFWorker() :
-    m_output(nullptr),
     m_inputSampleRate(0),
     m_outputSampleRate(0),
     m_decimation(1),
@@ -37,6 +37,33 @@ BFMEarlyIFWorker::BFMEarlyIFWorker() :
 BFMEarlyIFWorker::~BFMEarlyIFWorker()
 {
     stopWork();
+}
+
+void BFMEarlyIFWorker::setOutput(BFMDemodBaseband *output)
+{
+    QMutexLocker mutexLocker(&m_mutex);
+    m_outputs.clear();
+    if (output) {
+        m_outputs.append(output);
+    }
+}
+
+void BFMEarlyIFWorker::addOutput(BFMDemodBaseband *output)
+{
+    if (!output) {
+        return;
+    }
+
+    QMutexLocker mutexLocker(&m_mutex);
+    if (!m_outputs.contains(output)) {
+        m_outputs.append(output);
+    }
+}
+
+void BFMEarlyIFWorker::removeOutput(BFMDemodBaseband *output)
+{
+    QMutexLocker mutexLocker(&m_mutex);
+    m_outputs.removeAll(output);
 }
 
 void BFMEarlyIFWorker::configure(
@@ -200,8 +227,10 @@ void BFMEarlyIFWorker::process()
         processPart(part2begin, part2end);
         m_inputFifo.readCommit(count);
 
-        if (m_output && !m_outputBuffer.empty()) {
-            m_output->feed(m_outputBuffer.cbegin(), m_outputBuffer.cend());
+        if (!m_outputBuffer.empty()) {
+            for (BFMDemodBaseband *output : std::as_const(m_outputs)) {
+                output->feed(m_outputBuffer.cbegin(), m_outputBuffer.cend());
+            }
         }
     }
 
@@ -246,7 +275,7 @@ void BFMEarlyIFWorker::processPart(
         SampleVector::iterator begin,
         SampleVector::iterator end)
 {
-    if (!m_active || !m_output) {
+    if (!m_active || m_outputs.empty()) {
         return;
     }
 
