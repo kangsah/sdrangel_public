@@ -62,7 +62,7 @@ BFMSharedVFOBranch::BFMSharedVFOBranch(
     m_directInputSamples(0),
     m_directOutputSamples(0),
     m_directProcessingNsecs(0),
-    m_directReportTimer()
+    m_directReportTimer(),
     m_haveLastBlock(false)
 {
     m_thread->setObjectName("BFMSharedVFO");
@@ -98,13 +98,6 @@ void BFMSharedVFOBranch::feed(
         bool positiveOnly)
 {
     (void) positiveOnly;
-    m_worker->feed(begin, end);
-}
-
-void BFMSharedVFOBranch::feed(
-        const SampleVector::const_iterator& begin,
-        const SampleVector::const_iterator& end)
-{
     QMutexLocker mutexLocker(&m_feedMutex);
 
     if (m_haveLastBlock && (begin == m_lastBegin) && (end == m_lastEnd)) {
