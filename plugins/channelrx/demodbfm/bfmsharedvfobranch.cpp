@@ -1,5 +1,7 @@
 #include "bfmsharedvfobranch.h"
 
+#include <QDebug>
+
 #include "bfmdemodbaseband.h"
 
 QMutex BFMSharedVFOBranch::s_mutex;
@@ -31,8 +33,10 @@ std::shared_ptr<BFMSharedVFOBranch> BFMSharedVFOBranch::acquire(
                 frequencyOffset,
                 output));
         s_branches.insert(key, branch);
+        qDebug() << "BFMSharedVFOBranch::acquire: created key:" << key;
     } else {
         branch->worker()->addOutput(output);
+        qDebug() << "BFMSharedVFOBranch::acquire: reused key:" << key;
     }
 
     return branch;
@@ -47,7 +51,8 @@ BFMSharedVFOBranch::BFMSharedVFOBranch(
         BFMDemodBaseband* output) :
     m_thread(new QThread()),
     m_worker(new BFMEarlyIFWorker()),
-    m_key(key)
+    m_key(key),
+    m_haveLastBlock(false)
 {
     m_thread->setObjectName("BFMSharedVFO");
     m_worker->setOutput(output);
@@ -68,6 +73,22 @@ BFMSharedVFOBranch::~BFMSharedVFOBranch()
     m_thread->wait();
     m_worker = nullptr;
     m_thread = nullptr;
+}
+
+void BFMSharedVFOBranch::feed(
+        const SampleVector::const_iterator& begin,
+        const SampleVector::const_iterator& end)
+{
+    QMutexLocker mutexLocker(&m_feedMutex);
+
+    if (m_haveLastBlock && (begin == m_lastBegin) && (end == m_lastEnd)) {
+        return;
+    }
+
+    m_lastBegin = begin;
+    m_lastEnd = end;
+    m_haveLastBlock = true;
+    m_worker->feed(begin, end);
 }
 
 void BFMSharedVFOBranch::configure(

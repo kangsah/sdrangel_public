@@ -123,7 +123,9 @@ void BFMDemod::feed(const SampleVector::const_iterator& begin, const SampleVecto
 {
     (void) firstOfBurst;
     if (m_earlyIFActive && m_earlyIFWorker) {
-        m_earlyIFWorker->feed(begin, end);
+        if (m_earlyIFBranch) {
+            m_earlyIFBranch->feed(begin, end);
+        }
     } else {
         m_basebandSink->feed(begin, end);
     }
@@ -190,12 +192,6 @@ void BFMDemod::configureEarlyIF()
             m_basebandSink);
         m_earlyIFWorker = m_earlyIFBranch->worker();
         m_earlyIFBranchKey = branchKey;
-    } else {
-        m_earlyIFBranch->configure(
-            m_basebandSampleRate,
-            m_earlyIFSampleRate,
-            m_earlyIFDecimation,
-            m_settings.m_inputFrequencyOffset);
     }
 
     qDebug() << "BFMDemod::configureEarlyIF:"

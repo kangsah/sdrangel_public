@@ -26,6 +26,7 @@ public:
     ~BFMSharedVFOBranch();
 
     BFMEarlyIFWorker* worker() { return m_worker; }
+    void feed(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end);
     void configure(int inputSampleRate, int outputSampleRate, unsigned int decimation, qint64 frequencyOffset);
     void removeOutput(BFMDemodBaseband* output);
 
@@ -36,6 +37,10 @@ private:
     QThread* m_thread;
     BFMEarlyIFWorker* m_worker;
     QString m_key;
+    QMutex m_feedMutex;
+    SampleVector::const_iterator m_lastBegin;
+    SampleVector::const_iterator m_lastEnd;
+    bool m_haveLastBlock;
 
     BFMSharedVFOBranch(
         const QString& key,
