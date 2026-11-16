@@ -2,6 +2,9 @@
 #define INCLUDE_BFMSHAREDVFOBRANCH_H
 
 #include <memory>
+#include <atomic>
+#include <condition_variable>
+#include <thread>
 
 #include <QHash>
 #include <QMutex>
@@ -11,6 +14,7 @@
 
 #include "dsp/basebandsamplesink.h"
 #include "dsp/decimators.h"
+#include "dsp/samplesinkfifo.h"
 #include "bfmearlyifworker.h"
 
 class BFMDemodBaseband;
@@ -49,6 +53,13 @@ private:
     QString m_key;
     DSPDeviceSourceEngine* m_sourceEngine;
     QMutex m_feedMutex;
+    SampleSinkFifo m_rawFifo;
+    std::thread m_preThread;
+    std::mutex m_preWaitMutex;
+    std::condition_variable m_preWaitCondition;
+    std::atomic<bool> m_preStop;
+    std::atomic<quint64> m_preDroppedSamples;
+    std::atomic<unsigned int> m_preHighWater;
     bool m_directDecimation;
     unsigned int m_decimation;
     SampleVector m_directBuffer;
@@ -62,6 +73,8 @@ private:
     SampleVector::const_iterator m_lastBegin;
     SampleVector::const_iterator m_lastEnd;
     bool m_haveLastBlock;
+
+    void processDirect();
 
     BFMSharedVFOBranch(
         const QString& key,
