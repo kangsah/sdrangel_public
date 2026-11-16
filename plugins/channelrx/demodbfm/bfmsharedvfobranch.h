@@ -8,11 +8,13 @@
 #include <QString>
 #include <QThread>
 
+#include "dsp/basebandsamplesink.h"
 #include "bfmearlyifworker.h"
 
 class BFMDemodBaseband;
+class DSPDeviceSourceEngine;
 
-class BFMSharedVFOBranch
+class BFMSharedVFOBranch : public BasebandSampleSink
 {
 public:
     static std::shared_ptr<BFMSharedVFOBranch> acquire(
@@ -21,12 +23,18 @@ public:
         int outputSampleRate,
         unsigned int decimation,
         qint64 frequencyOffset,
+        DSPDeviceSourceEngine* sourceEngine,
         BFMDemodBaseband* output);
 
     ~BFMSharedVFOBranch();
 
+    void start() override {}
+    void stop() override {}
+    void feed(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end, bool positiveOnly) override;
+    void pushMessage(Message *msg) override { delete msg; }
+    QString getSinkName() override { return "BFMSharedVFO"; }
+
     BFMEarlyIFWorker* worker() { return m_worker; }
-    void feed(const SampleVector::const_iterator& begin, const SampleVector::const_iterator& end);
     void configure(int inputSampleRate, int outputSampleRate, unsigned int decimation, qint64 frequencyOffset);
     void removeOutput(BFMDemodBaseband* output);
 
@@ -37,6 +45,7 @@ private:
     QThread* m_thread;
     BFMEarlyIFWorker* m_worker;
     QString m_key;
+    DSPDeviceSourceEngine* m_sourceEngine;
     QMutex m_feedMutex;
     SampleVector::const_iterator m_lastBegin;
     SampleVector::const_iterator m_lastEnd;
@@ -48,6 +57,7 @@ private:
         int outputSampleRate,
         unsigned int decimation,
         qint64 frequencyOffset,
+        DSPDeviceSourceEngine* sourceEngine,
         BFMDemodBaseband* output);
 };
 

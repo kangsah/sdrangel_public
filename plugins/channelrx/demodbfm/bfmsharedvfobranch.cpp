@@ -2,6 +2,7 @@
 
 #include <QDebug>
 
+#include "dsp/dspdevicesourceengine.h"
 #include "bfmdemodbaseband.h"
 
 QMutex BFMSharedVFOBranch::s_mutex;
@@ -13,6 +14,7 @@ std::shared_ptr<BFMSharedVFOBranch> BFMSharedVFOBranch::acquire(
         int outputSampleRate,
         unsigned int decimation,
         qint64 frequencyOffset,
+        DSPDeviceSourceEngine* sourceEngine,
         BFMDemodBaseband* output)
 {
     QMutexLocker mutexLocker(&s_mutex);
@@ -31,6 +33,7 @@ std::shared_ptr<BFMSharedVFOBranch> BFMSharedVFOBranch::acquire(
                 outputSampleRate,
                 decimation,
                 frequencyOffset,
+                sourceEngine,
                 output));
         s_branches.insert(key, branch);
         qDebug() << "BFMSharedVFOBranch::acquire: created key:" << key;
@@ -48,10 +51,12 @@ BFMSharedVFOBranch::BFMSharedVFOBranch(
         int outputSampleRate,
         unsigned int decimation,
         qint64 frequencyOffset,
+        DSPDeviceSourceEngine* sourceEngine,
         BFMDemodBaseband* output) :
     m_thread(new QThread()),
     m_worker(new BFMEarlyIFWorker()),
     m_key(key),
+    m_sourceEngine(sourceEngine),
     m_haveLastBlock(false)
 {
     m_thread->setObjectName("BFMSharedVFO");
@@ -64,15 +69,26 @@ BFMSharedVFOBranch::BFMSharedVFOBranch(
     m_worker->configure(inputSampleRate, outputSampleRate, decimation, frequencyOffset);
     m_worker->startWork();
     m_thread->start();
+    m_sourceEngine->addSink(this);
 }
 
 BFMSharedVFOBranch::~BFMSharedVFOBranch()
 {
+    m_sourceEngine->removeSink(this, true);
     m_worker->stopWork();
     m_thread->quit();
     m_thread->wait();
     m_worker = nullptr;
     m_thread = nullptr;
+}
+
+void BFMSharedVFOBranch::feed(
+        const SampleVector::const_iterator& begin,
+        const SampleVector::const_iterator& end,
+        bool positiveOnly)
+{
+    (void) positiveOnly;
+    m_worker->feed(begin, end);
 }
 
 void BFMSharedVFOBranch::feed(
