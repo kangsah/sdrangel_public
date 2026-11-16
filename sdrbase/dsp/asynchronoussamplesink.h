@@ -16,6 +16,8 @@
 #include <mutex>
 #include <thread>
 
+#include <QElapsedTimer>
+
 #include "dsp/basebandsamplesink.h"
 #include "dsp/samplesinkfifo.h"
 
@@ -41,6 +43,11 @@ private:
     std::atomic<bool> m_running;
     std::atomic<bool> m_stopRequested;
     std::atomic<bool> m_positiveOnly;
+    std::atomic<quint64> m_droppedSamples;
+    std::atomic<unsigned int> m_highWater;
+    QElapsedTimer m_reportTimer;
+    std::atomic<quint64> m_processedSamples;
+    std::atomic<quint64> m_processedBlocks;
 
     void process();
     void stopInternal(bool stopTarget);

@@ -10,6 +10,7 @@
 #include "dsp/dspcommands.h"
 
 #include <algorithm>
+#include <QDebug>
 
 #include "asynchronoussamplesink.h"
 
@@ -17,10 +18,15 @@ AsynchronousSampleSink::AsynchronousSampleSink(BasebandSampleSink *sink) :
     m_sink(sink),
     m_running(false),
     m_stopRequested(false),
-    m_positiveOnly(false)
+    m_positiveOnly(false),
+    m_droppedSamples(0),
+    m_highWater(0),
+    m_processedSamples(0),
+    m_processedBlocks(0)
 {
-    m_fifo.setLabel("AsynchronousSampleSink");
+    m_fifo.setLabel(QString("Asynchronous%1").arg(sink->getSinkName()));
     m_fifo.setSize(SampleSinkFifo::getSizePolicy(48000));
+    m_reportTimer.start();
 }
 
 AsynchronousSampleSink::~AsynchronousSampleSink()
@@ -78,7 +84,15 @@ void AsynchronousSampleSink::feed(
         bool positiveOnly)
 {
     m_positiveOnly.store(positiveOnly);
-    m_fifo.write(begin, end);
+    const unsigned int count = end - begin;
+    const unsigned int written = m_fifo.write(begin, end);
+    const unsigned int fill = m_fifo.fill();
+    unsigned int highWater = m_highWater.load();
+    while ((fill > highWater) && !m_highWater.compare_exchange_weak(highWater, fill)) {
+    }
+    if (written < count) {
+        m_droppedSamples.fetch_add(count - written);
+    }
     m_waitCondition.notify_one();
 }
 
@@ -88,6 +102,10 @@ void AsynchronousSampleSink::pushMessage(Message *msg)
         const DSPSignalNotification& notification = static_cast<const DSPSignalNotification&>(*msg);
         m_fifo.setSize(SampleSinkFifo::getSizePolicy(notification.getSampleRate()));
         m_fifo.reset();
+        m_droppedSamples.store(0);
+        m_highWater.store(0);
+        m_processedSamples = 0;
+        m_processedBlocks = 0;
     }
 
     m_sink->pushMessage(msg);
@@ -128,6 +146,22 @@ void AsynchronousSampleSink::process()
             }
 
             m_fifo.readCommit(count);
+            m_processedSamples.fetch_add(count);
+            m_processedBlocks.fetch_add(1);
+
+            if (m_reportTimer.elapsed() >= 2000) {
+                qDebug() << "AsynchronousSampleSink::process:"
+                         << "sink:" << m_sink->getSinkName()
+                         << "processedSamples:" << m_processedSamples.load()
+                         << "processedBlocks:" << m_processedBlocks.load()
+                         << "fifoFill:" << m_fifo.fill()
+                         << "fifoSize:" << m_fifo.size()
+                         << "fifoHighWater:" << m_highWater.load()
+                         << "droppedSamples:" << m_droppedSamples.load();
+                m_reportTimer.restart();
+                m_processedSamples.store(0);
+                m_processedBlocks.store(0);
+            }
 
             if (m_stopRequested.load()) {
                 break;
