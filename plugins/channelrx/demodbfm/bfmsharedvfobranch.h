@@ -7,8 +7,10 @@
 #include <QMutex>
 #include <QString>
 #include <QThread>
+#include <QElapsedTimer>
 
 #include "dsp/basebandsamplesink.h"
+#include "dsp/decimators.h"
 #include "bfmearlyifworker.h"
 
 class BFMDemodBaseband;
@@ -47,6 +49,16 @@ private:
     QString m_key;
     DSPDeviceSourceEngine* m_sourceEngine;
     QMutex m_feedMutex;
+    bool m_directDecimation;
+    unsigned int m_decimation;
+    SampleVector m_directBuffer;
+    SampleVector m_directIntermediate;
+    Decimators<qint32, qint32, SDR_RX_SAMP_SZ, SDR_RX_SAMP_SZ, true> m_decimators1;
+    Decimators<qint32, qint32, SDR_RX_SAMP_SZ, SDR_RX_SAMP_SZ, true> m_decimators2;
+    quint64 m_directInputSamples;
+    quint64 m_directOutputSamples;
+    quint64 m_directProcessingNsecs;
+    QElapsedTimer m_directReportTimer;
     SampleVector::const_iterator m_lastBegin;
     SampleVector::const_iterator m_lastEnd;
     bool m_haveLastBlock;

@@ -57,6 +57,12 @@ BFMSharedVFOBranch::BFMSharedVFOBranch(
     m_worker(new BFMEarlyIFWorker()),
     m_key(key),
     m_sourceEngine(sourceEngine),
+    m_directDecimation((frequencyOffset == 0) && (decimation > 1)),
+    m_decimation(decimation),
+    m_directInputSamples(0),
+    m_directOutputSamples(0),
+    m_directProcessingNsecs(0),
+    m_directReportTimer()
     m_haveLastBlock(false)
 {
     m_thread->setObjectName("BFMSharedVFO");
@@ -66,7 +72,11 @@ BFMSharedVFOBranch::BFMSharedVFOBranch(
     QObject::connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     QObject::connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 
-    m_worker->configure(inputSampleRate, outputSampleRate, decimation, frequencyOffset);
+    if (m_directDecimation) {
+        m_worker->configure(outputSampleRate, outputSampleRate, 1, 0);
+    } else {
+        m_worker->configure(inputSampleRate, outputSampleRate, decimation, frequencyOffset);
+    }
     m_worker->startWork();
     m_thread->start();
     m_sourceEngine->addSink(this);
@@ -104,7 +114,70 @@ void BFMSharedVFOBranch::feed(
     m_lastBegin = begin;
     m_lastEnd = end;
     m_haveLastBlock = true;
-    m_worker->feed(begin, end);
+
+    if (!m_directDecimation) {
+        m_worker->feed(begin, end);
+        return;
+    }
+
+    QElapsedTimer processingTimer;
+    processingTimer.start();
+    const unsigned int inputSamples = static_cast<unsigned int>(end - begin);
+    m_directInputSamples += inputSamples;
+
+    m_directBuffer.resize(static_cast<int>(inputSamples / m_decimation) + 2);
+
+    SampleVector::const_iterator input = begin;
+    const qint32* raw = reinterpret_cast<const qint32*>(&*input);
+    SampleVector::iterator output = m_directBuffer.begin();
+    const qint32 rawLength = static_cast<qint32>(inputSamples * 2);
+
+    if (m_decimation <= 64) {
+        switch (m_decimation) {
+        case 2: m_decimators1.decimate2_cen(&output, raw, rawLength); break;
+        case 4: m_decimators1.decimate4_cen(&output, raw, rawLength); break;
+        case 8: m_decimators1.decimate8_cen(&output, raw, rawLength); break;
+        case 16: m_decimators1.decimate16_cen(&output, raw, rawLength); break;
+        case 32: m_decimators1.decimate32_cen(&output, raw, rawLength); break;
+        case 64: m_decimators1.decimate64_cen(&output, raw, rawLength); break;
+        default: break;
+        }
+    } else {
+        m_directIntermediate.resize(static_cast<int>(inputSamples / 64) + 2);
+        SampleVector::iterator firstOutput = m_directIntermediate.begin();
+        m_decimators1.decimate64_cen(&firstOutput, raw, rawLength);
+        const unsigned int firstCount = static_cast<unsigned int>(firstOutput - m_directIntermediate.begin());
+        SampleVector::iterator secondOutput = m_directBuffer.begin();
+        const qint32* firstRaw = reinterpret_cast<const qint32*>(m_directIntermediate.data());
+        m_decimators2.decimate2_cen(&secondOutput, firstRaw, static_cast<qint32>(firstCount * 2));
+        output = secondOutput;
+    }
+
+    const unsigned int outputSamples = static_cast<unsigned int>(output - m_directBuffer.begin());
+    m_directOutputSamples += outputSamples;
+    m_directProcessingNsecs += processingTimer.nsecsElapsed();
+
+    if (outputSamples > 0) {
+        m_worker->feed(m_directBuffer.cbegin(), m_directBuffer.cbegin() + outputSamples);
+    }
+
+    if (m_directReportTimer.isValid() && (m_directReportTimer.elapsed() >= 2000)) {
+        const double seconds = static_cast<double>(m_directReportTimer.elapsed()) / 1000.0;
+        qDebug() << "BFMSharedVFOBranch::directDecimation:"
+                 << "inputRate:" << (static_cast<double>(m_directInputSamples) / seconds)
+                 << "outputRate:" << (static_cast<double>(m_directOutputSamples) / seconds)
+                 << "decimation:" << m_decimation
+                 << "processingTimeMs:" << (static_cast<double>(m_directProcessingNsecs) / 1000000.0)
+                 << "processingUtilizationPercent:"
+                 << (100.0 * static_cast<double>(m_directProcessingNsecs) /
+                     (static_cast<double>(m_directReportTimer.elapsed()) * 1000000.0));
+        m_directInputSamples = 0;
+        m_directOutputSamples = 0;
+        m_directProcessingNsecs = 0;
+        m_directReportTimer.restart();
+    } else if (!m_directReportTimer.isValid()) {
+        m_directReportTimer.start();
+    }
 }
 
 void BFMSharedVFOBranch::configure(

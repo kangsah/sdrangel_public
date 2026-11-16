@@ -91,7 +91,7 @@ void BFMEarlyIFWorker::configure(
     m_reportTimer.restart();
     m_decimator1.reset();
     m_decimator2.reset();
-    m_active = inputSampleRate > 0 && outputSampleRate > 0 && decimation > 1;
+    m_active = inputSampleRate > 0 && outputSampleRate > 0 && decimation >= 1;
 
     if (!m_active) {
         return;
@@ -283,6 +283,22 @@ void BFMEarlyIFWorker::processPart(
     const unsigned int inputSamples = static_cast<unsigned int>(inputBlockSamples);
 
     if (inputSamples == 0) {
+        return;
+    }
+
+    if (!m_decimator1) {
+        m_outputBuffer.reserve(m_outputBuffer.size() + inputSamples);
+        for (unsigned int i = 0; i < inputSamples; ++i) {
+            const Complex normalizedInput(
+                begin[i].real() / SDR_RX_SCALEF,
+                begin[i].imag() / SDR_RX_SCALEF);
+            const Complex output = normalizedInput * m_nco.nextIQ();
+            m_outputBuffer.emplace_back(
+                output.real() * SDR_RX_SCALEF,
+                output.imag() * SDR_RX_SCALEF);
+        }
+        m_inputSamples += inputBlockSamples;
+        m_outputSamples += inputSamples;
         return;
     }
 
